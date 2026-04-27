@@ -1,0 +1,116 @@
+{{- range $key, $svc := dict "spring" .Values.spring "python" .Values.python "nodejs" .Values.nodejs }}
+{{- if $svc.enabled }}
+{{- $ctx := dict "root" $ "svc" $svc "key" $key }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "azure-otel.fullname" $ctx }}
+  labels:
+    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+spec:
+  type: {{ $svc.service.type }}
+  selector:
+    {{- include "azure-otel.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $svc.service.port }}
+      targetPort: {{ $svc.containerPort }}
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "azure-otel.fullname" $ctx }}
+  labels:
+    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "azure-otel.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "azure-otel.commonLabels" $ctx | nindent 8 }}
+    spec:
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $svc.name }}
+          image: {{ include "azure-otel.image" $ctx }}
+          imagePullPolicy: {{ $.Values.global.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.containerPort }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if eq $key "python" }}
+            {{- if not (hasKey $svc.env "JAVA_API_BASE_URL") }}
+            - name: JAVA_API_BASE_URL
+              value: "http://{{ $.Release.Name }}-{{ $.Values.spring.name }}:{{ $.Values.spring.service.port }}"
+            {{- end }}
+            {{- end }}
+            {{- if eq $key "nodejs" }}
+            {{- if not (hasKey $svc.env "PYTHON_API_BASE_URL") }}
+            {{- /* Browser-facing URL. Prefer explicit value; otherwise fall back to
+                   same-origin /api when ingress is enabled (browser calls Node's host
+                   and the ingress routes /api -> python). NEVER use cluster DNS here:
+                   the browser cannot resolve <release>-python:8000. */ -}}
+            {{- $public := $svc.pythonPublicBaseUrl -}}
+            {{- if and (not $public) $.Values.ingress.enabled -}}
+              {{- $public = $.Values.ingress.apiPathPrefix -}}
+            {{- end }}
+            - name: PYTHON_API_BASE_URL
+              value: {{ $public | quote }}
+            {{- end }}
+            {{- end }}
+          {{- with $svc.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $svc.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $svc.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and (eq $key "spring") $svc.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ $svc.persistence.mountPath }}
+          {{- end }}
+      {{- if and (eq $key "spring") $svc.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "azure-otel.fullname" $ctx }}-data
+      {{- end }}
+{{- if and (eq $key "spring") $svc.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "azure-otel.fullname" $ctx }}-data
+  labels:
+    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml $svc.persistence.accessModes | nindent 4 }}
+  {{- with $svc.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $svc.persistence.size }}
+{{- end }}
+{{- end }}
+{{- end }}

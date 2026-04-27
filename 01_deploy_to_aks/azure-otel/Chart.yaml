@@ -1,0 +1,11 @@
+apiVersion: v2
+name: azure-otel
+description: Three sketch apps (nodejs SPA, python FastAPI edge, spring-java CRUD with embedded SQLite) for practicing Azure observability on AKS.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - observability
+  - aks
+  - opentelemetry
+  - sketch

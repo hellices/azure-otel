@@ -1,0 +1,33 @@
+{
+  "name": "spa-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000 -H 0.0.0.0",
+    "lint": "next lint"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@mantine/core": "9.1.0",
+    "@mantine/form": "9.1.0",
+    "@mantine/hooks": "9.1.0",
+    "@mantine/notifications": "9.1.0",
+    "@tabler/icons-react": "3.41.1",
+    "next": "15.5.9",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "postcss": "8.5.3",
+    "postcss-preset-mantine": "1.17.0",
+    "postcss-simple-vars": "7.0.1",
+    "typescript": "5.9.3"
+  }
+}

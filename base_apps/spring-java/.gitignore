@@ -1,0 +1,24 @@
+# gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ / Eclipse
+.idea/
+*.iml
+out/
+.classpath
+.project
+.settings/
+.vscode/
+
+# Spring
+HELP.md
+
+# local DB
+*.db
+*.db-journal
+
+# OS
+.DS_Store
+Thumbs.db

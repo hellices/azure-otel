@@ -1,0 +1,130 @@
+# Default values for azure-otel umbrella chart.
+# Override per-environment with `helm install/upgrade -f values-dev.yaml`.
+
+global:
+  image:
+    registry: ghcr.io
+    repository: hellices/azure-otel   # single OCI repo, services differentiated by tag prefix
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+# ---- Service: spring-java (CRUD + embedded SQLite) ----
+spring:
+  enabled: true
+  name: spring
+  imageTag: spring-java-latest        # final image: <registry>/<repository>:<imageTag>
+  replicaCount: 1
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+  env:
+    PORT: "8080"
+    SQLITE_PATH: "/data/items.db"
+  persistence:
+    enabled: true
+    storageClassName: ""              # "" -> default StorageClass on AKS (managed-csi)
+    accessModes: [ReadWriteOnce]
+    size: 1Gi
+    mountPath: /data
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  livenessProbe:
+    httpGet: { path: /health, port: 8080 }
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: { path: /health, port: 8080 }
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+# ---- Service: python (FastAPI edge / proxy) ----
+python:
+  enabled: true
+  name: python
+  imageTag: python-latest
+  replicaCount: 1
+  containerPort: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+  # JAVA_API_BASE_URL is auto-derived from the Spring service unless overridden here.
+  env:
+    PORT: "8000"
+    LOG_LEVEL: "INFO"
+    ALLOWED_ORIGINS: "*"
+    HTTP_TIMEOUT_SECONDS: "5"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  livenessProbe:
+    httpGet: { path: /health, port: 8000 }
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: { path: /health, port: 8000 }
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# ---- Service: nodejs (Next.js SPA shell) ----
+nodejs:
+  enabled: true
+  name: nodejs
+  imageTag: nodejs-latest
+  replicaCount: 1
+  containerPort: 3000
+  service:
+    type: ClusterIP
+    port: 3000
+  # PYTHON_API_BASE_URL is served to the BROWSER via /config.js, so it must be a
+  # publicly reachable URL (NOT a cluster-internal DNS name).
+  #   - When ingress.enabled=true, leaving this empty makes the SPA call the
+  #     same origin under /api (the ingress routes /api -> python).
+  #   - Otherwise, set it to the public URL of the FastAPI edge.
+  pythonPublicBaseUrl: ""
+  env:
+    PORT: "3000"
+    NODE_ENV: "production"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  livenessProbe:
+    httpGet: { path: /healthz, port: 3000 }
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: { path: /healthz, port: 3000 }
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# ---- Public entry (Ingress) ----
+# Disabled by default; enable when AKS has an ingress controller (e.g., AGIC, nginx, web app routing).
+# When enabled, the ingress exposes:
+#   /        -> nodejs   (SPA)
+#   /api/*   -> python   (FastAPI edge; browser calls same-origin, no CORS)
+# Spring is intentionally NOT exposed; it is only reachable from Python pods
+# inside the cluster (enforced by networkPolicy below).
+ingress:
+  enabled: false
+  className: ""                       # e.g., "webapprouting.kubernetes.azure.com" or "nginx"
+  annotations: {}
+  host: ""                            # e.g., "azure-otel.example.com"; empty = host-less rule
+  tls: []                             # [{ secretName: tls-secret, hosts: [example.com] }]
+  # Strip /api prefix before forwarding to python (so browser /api/items -> python /items).
+  # Implementation depends on the ingress controller; see README for examples.
+  apiPathPrefix: "/api"
+
+# ---- NetworkPolicy: enforce server-to-server calls stay inside the cluster ----
+# Defaults ON for Spring (the database tier). When enabled, the cluster CNI
+# plugin must support NetworkPolicy. AKS: Azure CNI Powered by Cilium, Calico,
+# or Azure NPM all support it.
+networkPolicy:
+  enabled: true
+  # Spring accepts traffic ONLY from Python pods in this release.
+  spring:
+    enabled: true
+  # Python accepts traffic from Node pods + the ingress controller namespace.
+  python:
+    enabled: false
+    ingressNamespaceSelector: {}      # e.g., { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }

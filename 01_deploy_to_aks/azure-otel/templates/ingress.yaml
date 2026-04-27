@@ -1,0 +1,45 @@
+{{- if .Values.ingress.enabled }}
+{{- $nodeCtx := dict "root" . "svc" .Values.nodejs "key" "nodejs" }}
+{{- $pyCtx   := dict "root" . "svc" .Values.python "key" "python" }}
+{{- $apiPrefix := .Values.ingress.apiPathPrefix | default "/api" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-azure-otel
+  labels:
+    {{- include "azure-otel.commonLabels" $nodeCtx | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+      http:
+        paths:
+          # /api/* -> python edge (browser calls same-origin to avoid CORS)
+          - path: {{ $apiPrefix }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "azure-otel.fullname" $pyCtx }}
+                port:
+                  number: {{ .Values.python.service.port }}
+          # / -> nodejs SPA
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "azure-otel.fullname" $nodeCtx }}
+                port:
+                  number: {{ .Values.nodejs.service.port }}
+{{- end }}
