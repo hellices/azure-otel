@@ -1,27 +1,30 @@
 # 03 — OTLP Collector → App Insights (traces) + AMA scrape (metrics)
 
-01·02 단계가 끝난 클러스터에서 SDK가 직접 노출하던 `:9464/metrics` 경로를
-**OTel Collector** 한 단계 뒤로 옮깁니다. SDK는 OTLP/gRPC만 쓰고, collector가:
+Once stages 01 and 02 are done, replace the SDK's direct `:9464/metrics`
+exposure with an in-cluster **OTel Collector**. SDKs only speak OTLP/gRPC and
+the collector splits the signal:
 
-- **traces** → `azuremonitor` exporter → Application Insights (AMPLS 경유)
-- **metrics** → `prometheus` exporter `:8889` → ama-metrics 스크레이프 → AMW
+- **traces** → `azuremonitor` exporter → Application Insights (via AMPLS)
+- **metrics** → `prometheus` exporter on `:8889` → ama-metrics scrape → AMW
+
+> Korean version: [README_KR.md](./README_KR.md)
 
 ```
 app pod ─OTLP/gRPC─► otel-collector ─┬─► AppI (private via AMPLS)
                                      └─► :8889/metrics ◄─ ama-metrics ─► AMW ─► Grafana
 ```
 
-AMPLS / Private Endpoint / Private DNS Zone 은 01단계 Bicep 에서 이미 만들어
-두므로 여기서는 별도 인프라 작업이 없습니다.
+AMPLS / Private Endpoint / Private DNS Zones are already provisioned by the
+step 01 Bicep, so there is no extra infra work here.
 
-## 0. 02단계 정리
+## 0. Clean up stage 02
 
 ```powershell
 kubectl -n azure-otel delete podmonitor.azmonitoring.coreos.com azure-otel-apps --ignore-not-found
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 ```
 
-## 1. Connection String Secret + 매니페스트 적용
+## 1. Create the connection string Secret + apply manifests
 
 ```powershell
 kubectl -n azure-otel create secret generic otel-collector-secrets `
@@ -35,38 +38,38 @@ kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
-ama-metrics가 새 PodMonitor를 못 보면 한 번 재시작:
+If ama-metrics doesn't see the new PodMonitor, restart it once:
 
 ```powershell
 kubectl -n kube-system rollout restart deploy/ama-metrics
 ```
 
-## 2. 동작 확인
+## 2. Verify
 
 ```powershell
 kubectl -n azure-otel logs deploy/otel-collector --tail=50
 
-# 메트릭이 :8889/metrics 로 나오는지
+# Confirm metrics are exposed on :8889/metrics
 kubectl -n azure-otel port-forward deploy/otel-collector 8889:8889
 curl.exe -s http://localhost:8889/metrics | Select-String http_server_request_duration_seconds_count -List
 ```
 
-App Insights → **Transaction search** 또는 Logs:
+In Application Insights → **Transaction search** or Logs:
 
 ```kusto
 requests | where timestamp > ago(15m)
 | summarize count() by cloud_RoleName, name
 ```
 
-`cloud_RoleName` 으로 `spring`, `python`, `nodejs` 가 보이면 OK. Grafana에서는
-02단계 대시보드가 그대로 동작합니다.
+Seeing `cloud_RoleName` of `spring`, `python`, and `nodejs` means traces are
+flowing. The stage 02 Grafana dashboards keep working unchanged.
 
-## 트러블슈팅
+## Troubleshooting
 
-| 증상 | 원인 / 해결 |
+| Symptom | Cause / fix |
 |---|---|
-| Operator webhook이 init container 안 붙임 | cert-manager / Operator Pod Ready 확인. CR 적용 후 앱 파드는 한 번 restart 필요 |
-| Collector 로그에 `connection refused` (azuremonitor) | AMPLS Private DNS 미동작. `kubectl -n azure-otel exec deploy/otel-collector -- nslookup <region>.in.applicationinsights.azure.com` 가 사설 IP 반환해야 함 |
-| AppI Live Metrics는 OK인데 Transaction 비어있음 | Connection String Secret 미반영 — Secret 재생성 후 collector restart |
-| Grafana에 메트릭 0 | ama-metrics가 새 PodMonitor 인식 못함. `kubectl -n kube-system rollout restart deploy/ama-metrics` |
-| 메트릭 라벨(`service`, `k8s_pod`) 누락 | OTel SDK 버전 차이. `:8889/metrics` raw 출력 보고 `transform/prom_labels` 매핑 조정 |
+| Operator webhook doesn't inject init container | Check cert-manager / Operator pods are Ready. After applying the CR you must restart pods once. |
+| Collector logs `connection refused` (azuremonitor) | AMPLS Private DNS isn't in place. `kubectl -n azure-otel exec deploy/otel-collector -- nslookup <region>.in.applicationinsights.azure.com` should resolve to a private IP. |
+| AppI Live Metrics is OK but Transactions are empty | Connection String Secret didn't take — recreate the Secret and restart the collector. |
+| Grafana shows 0 metrics | ama-metrics didn't pick up the new PodMonitor. `kubectl -n kube-system rollout restart deploy/ama-metrics` |
+| Metric labels (`service`, `k8s_pod`) missing | OTel SDK version differences. Inspect raw output at `:8889/metrics` and adjust the `transform/prom_labels` mappings. |

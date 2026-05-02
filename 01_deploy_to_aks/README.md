@@ -1,7 +1,10 @@
 # 01 — Deploy to AKS (azd + Helm)
 
-AKS + 모니터링 스택(AMW, Grafana, App Insights, Log Analytics)을 프로비저닝하고
-[`azure-otel/`](./azure-otel) Helm 차트를 배포합니다.
+Provisions AKS plus the monitoring stack (AMW, Grafana, App Insights, Log
+Analytics, **AMPLS + Private Endpoint + 5 Private DNS Zones**) and deploys the
+[`azure-otel/`](./azure-otel) Helm chart.
+
+> Korean version: [README_KR.md](./README_KR.md)
 
 ## Prerequisites
 
@@ -13,9 +16,9 @@ winget install --id Helm.Helm            --silent --accept-source-agreements --a
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
 ```
 
-## 실행 순서
+## Steps
 
-### 1. 로그인 & 환경 초기화
+### 1. Login & init env
 
 ```powershell
 cd c:\Users\inhwanhwang\vscode\azure-otel\01_deploy_to_aks
@@ -27,17 +30,17 @@ azd env new dev
 azd env set AZURE_LOCATION koreacentral
 ```
 
-### 2. 인프라 프로비저닝 (Bicep만)
+### 2. Provision infra
 
 ```powershell
 azd up
 ```
 
-`azd up`은 Bicep으로 AKS/모니터링 스택을 만들고 postprovision hook에서
-Gateway API + ALB add-on 활성화 + AGFC subnet 권한 부여까지만 수행합니다.
-**Helm 차트 배포는 포함되지 않습니다.**
+`azd up` creates the AKS / monitoring stack via Bicep and runs the
+postprovision hook to enable Gateway API + ALB add-on and grant the AGFC subnet
+permissions. **The Helm release is not part of this hook.**
 
-### 3. kubectl 연결
+### 3. Connect kubectl
 
 ```powershell
 $rg  = (azd env get-value AZURE_RESOURCE_GROUP)
@@ -46,7 +49,7 @@ az aks get-credentials --resource-group $rg --name $aks --overwrite-existing
 kubectl get nodes
 ```
 
-### 4. Helm 차트 배포
+### 4. Deploy the Helm chart
 
 ```powershell
 cd c:\Users\inhwanhwang\vscode\azure-otel
@@ -59,43 +62,45 @@ helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
 kubectl -n azure-otel get pods,svc
 ```
 
-### 4-1. AGFC public 주소 확인
+### 4-1. Get the AGFC public address
 
-Helm 배포 후 Gateway가 public IP/FQDN을 받기까지 1–3분 정도 걸립니다.
+The Gateway typically gets its public IP/FQDN within 1–3 minutes after the
+chart is deployed.
 
 ```powershell
-# 한 번만 조회
+# One-shot
 kubectl -n azure-otel get gateway azure-otel-gw `
   -o 'jsonpath={.status.addresses[0].value}'
 
-# 받을 때까지 대기 (kubectl 1.23+)
+# Wait until ready (kubectl 1.23+)
 kubectl -n azure-otel wait gateway/azure-otel-gw `
   --for=jsonpath='{.status.addresses[0].value}' --timeout=5m
 
-# 받은 주소를 변수에 저장 + 바로 열기
+# Capture and open
 $addr = kubectl -n azure-otel get gateway azure-otel-gw `
           -o 'jsonpath={.status.addresses[0].value}'
 "http://$addr"
 Start-Process "http://$addr"
 ```
 
-`Gateway` / `HTTPRoute`는 Helm 차트가 만들고 AGFC 컨트롤러가 Application Gateway
-for Containers의 frontend 주소를 `.status.addresses[0].value`에 채워 넣습니다.
+The `Gateway` / `HTTPRoute` are created by the Helm chart; the AGFC controller
+then populates `.status.addresses[0].value` with the Application Gateway for
+Containers frontend.
 
-### 5. Grafana 열기
+### 5. Open Grafana
 
 ```powershell
 $grafana = (azd env get-value GRAFANA_ENDPOINT)
-$grafana                                  # URL 확인
-Start-Process "msedge.exe" $grafana       # 또는 chrome.exe / iexplore.exe
-# 한 줄로:  Start-Process -FilePath $grafana    (기본 브라우저)
+$grafana                                  # check the URL
+Start-Process "msedge.exe" $grafana       # or chrome.exe / iexplore.exe
 ```
 
-`Start-Process (azd env get-value GRAFANA_ENDPOINT)` 가 실패한다면 azd가 출력한
-경고가 함께 들어가 값이 배열이 됐거나 PS5의 URL 핸들러 동작 차이 때문입니다.
-위처럼 변수에 먼저 담거나 `-FilePath`를 명시하면 안정적입니다.
+If `Start-Process (azd env get-value GRAFANA_ENDPOINT)` fails it usually means
+azd printed a warning that turned the value into an array, or PS5 URL handling
+quirks kicked in. Capturing into a variable first or using `-FilePath` is
+reliable.
 
-### 6. 정리
+### 6. Tear down
 
 ```powershell
 azd down --purge --force
@@ -103,38 +108,41 @@ azd down --purge --force
 
 ---
 
-## 참고
+## Reference
 
-### 생성되는 리소스
+### Resources created
 
-리소스 그룹 `rg-<env>` 하위:
+Under resource group `rg-<env>`:
 
 - **VNet** `aotel-vnet-*` (10.240.0.0/16) + private `aks-subnet` (10.240.0.0/22)
-- **AKS** `aotel-aks-*` (Standard, 3× `Standard_D4s_v5` 3–5 autoscale, Azure CNI overlay,
-  Cilium + NetworkPolicy, OIDC, Workload Identity, RBAC)
+- **AKS** `aotel-aks-*` (Standard, 3× `Standard_D4s_v5`, 3–5 autoscale, Azure
+  CNI overlay, Cilium + NetworkPolicy, OIDC, Workload Identity, RBAC)
   - Container Insights (`omsagent`) → Log Analytics
   - Managed Prometheus (`azureMonitorProfile.metrics`) → AMW
 - **Log Analytics** + **Application Insights** (workspace-based)
-- **Azure Monitor Workspace** (managed Prometheus 백엔드)
-- **Azure Managed Grafana** (Standard, AMW 데이터소스 연결)
-- **ACR** `aotelacr*` (Standard, AKS kubelet에 `AcrPull` 부여)
+- **Azure Monitor Workspace** (managed Prometheus backend)
+- **Azure Managed Grafana** (Standard, AMW datasource wired up)
+- **ACR** `aotelacr*` (Standard, AKS kubelet granted `AcrPull`)
+- **AMPLS** + Private Endpoint into `aks-subnet` + 5 Private DNS Zones (linked
+  to the VNet) so step 03's collector can reach App Insights privately.
 
-Role assignments (`principalId` 자동 주입):
+Role assignments (with `principalId` auto-injected):
 
 - Deployer → Grafana Admin / AKS RBAC Cluster Admin + Cluster User
 - Grafana MSI → Monitoring Data Reader on AMW
 
-### `azd up`이 수행하는 단계
+### What `azd up` does
 
-1. Subscription-scope Bicep으로 RG 생성
-2. RG 모듈로 VNet, AKS, 모니터링, Grafana, role assignment 생성
-3. `preprovision` hook: Azure CLI 확장 설치, AGFC preview feature/provider 등록
-4. `postprovision` hook: AKS Gateway API + AGFC 활성화, ALB MSI에 `aks-appgateway`
-   서브넷 권한 부여
+1. Subscription-scope Bicep creates the RG
+2. The RG module creates the VNet, AKS, monitoring, Grafana, AMPLS, role assignments
+3. `preprovision` hook: installs Azure CLI extensions, registers AGFC preview
+   feature/provider
+4. `postprovision` hook: enables AKS Gateway API + AGFC, grants the ALB MSI
+   permission on the `aks-appgateway` subnet
 
-> Helm 차트 설치는 azd 사이클에서 분리되어 있습니다 (위 4단계 참고).
+> Helm install is intentionally split out of the azd lifecycle (see step 4).
 
-### azd 환경 값 확인
+### Inspecting azd env values
 
 ```powershell
 azd env get-values | Select-String -Pattern '^(AKS_|GRAFANA_|APPLICATION_INSIGHTS_|AZURE_MONITOR_|LOG_ANALYTICS_|AZURE_RESOURCE_GROUP|VNET_|AGFC_|ACR_)'
@@ -142,18 +150,18 @@ azd env get-values | Select-String -Pattern '^(AKS_|GRAFANA_|APPLICATION_INSIGHT
 
 ### Private cluster
 
-`infra/main.parameters.json`에서 `enablePrivateCluster=true`이면 VNet 내부
-(bastion/VPN) 또는 `az aks command invoke`를 통해 `kubectl`을 실행해야 합니다.
+If `infra/main.parameters.json` sets `enablePrivateCluster=true`, you must run
+`kubectl` from inside the VNet (bastion/VPN) or via `az aks command invoke`.
 
-### GHCR 이미지 권한
+### GHCR image permissions
 
-이미지(`ghcr.io/hellices/azure-otel:<service>-latest`)가 private이면
-`ImagePullBackOff`가 발생합니다. 둘 중 하나로 해결:
+The images (`ghcr.io/hellices/azure-otel:<service>-latest`) being private
+will cause `ImagePullBackOff`. Two options:
 
-**A. 패키지를 Public으로 변경 (1회)**
+**A. Make the package public (one-time)**
 https://github.com/users/hellices/packages/container/azure-otel/settings → Change visibility → Public
 
-**B. Pull secret 사용**
+**B. Use a pull secret**
 
 ```powershell
 $ghcrUser  = 'hellices'
@@ -164,21 +172,22 @@ kubectl -n azure-otel create secret docker-registry ghcr `
 # Helm:  --set 'global.imagePullSecrets[0].name=ghcr'
 ```
 
-### Ingress 없이 스모크 테스트
+### Smoke test without ingress
 
 ```powershell
 helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
   --namespace azure-otel --set nodejs.pythonPublicBaseUrl=http://localhost:8000
 
-kubectl -n azure-otel port-forward svc/azure-otel-nodejs 3000:3000   # 터미널 A
-kubectl -n azure-otel port-forward svc/azure-otel-python 8000:8000   # 터미널 B
+kubectl -n azure-otel port-forward svc/azure-otel-nodejs 3000:3000   # terminal A
+kubectl -n azure-otel port-forward svc/azure-otel-python 8000:8000   # terminal B
 # http://localhost:3000
 ```
 
-공인 엔드포인트는 `azd up`이 Gateway API + AGFC를 자동 구성하며, 그 다음
-Helm 차트(4단계)가 `ApplicationLoadBalancer` / `Gateway` / `HTTPRoute`를 생성합니다.
+The public endpoint is created by `azd up` (Gateway API + AGFC) and then by
+the Helm chart (step 4) which lays down the `ApplicationLoadBalancer` /
+`Gateway` / `HTTPRoute`.
 
-### Tear down 옵션
+### Tear-down options
 
-`--purge`는 soft-delete 가능한 리소스(App Insights, Log Analytics, Grafana)를
-영구 삭제합니다. 보존하려면 생략하세요.
+`--purge` permanently deletes soft-deletable resources (App Insights, Log
+Analytics, Grafana). Drop the flag to keep them.
