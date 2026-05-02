@@ -1,0 +1,18 @@
+{{- if and .Values.spring.enabled .Values.spring.persistence.enabled }}
+{{- $ctx := dict "root" . "svc" .Values.spring "key" "spring" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "azure-otel.fullname" $ctx }}-data
+  labels:
+    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.spring.persistence.accessModes | nindent 4 }}
+  {{- with .Values.spring.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.spring.persistence.size }}
+{{- end }}

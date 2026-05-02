@@ -1,0 +1,20 @@
+name: azure-otel-aks
+metadata:
+  template: azure-otel@0.1.0
+infra:
+  provider: bicep
+  path: infra
+  module: main
+hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: ./infra/hooks/preprovision.ps1
+      interactive: true
+      continueOnError: false
+  postprovision:
+    windows:
+      shell: pwsh
+      run: ./infra/hooks/postprovision.ps1
+      interactive: true
+      continueOnError: false

@@ -1,0 +1,70 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: azure-otel
+  namespace: azure-otel
+spec:
+  # Operator injects an init-container per language that copies the SDK + agent
+  # files into a shared volume, then sets the OTEL_* env vars on the app container.
+  exporter:
+    # Send metrics via Prometheus scrape (PodMonitor) — keep OTLP off for now.
+    # Logs/traces are out of scope in step 02.
+    endpoint: "http://localhost:4318"   # placeholder; not used until step 03
+  propagators:
+    - tracecontext
+    - baggage
+    - b3
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  resource:
+    addK8sUIDAttributes: true
+
+  # ---- Per-language auto-instrumentation ----
+
+  # Spring Boot / Java — uses the OpenTelemetry Java agent.
+  # Exposes a Prometheus endpoint on :9464 via the prometheus exporter so that
+  # the PodMonitor can scrape it without an in-cluster collector.
+  java:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:latest
+    env:
+      - name: OTEL_METRICS_EXPORTER
+        value: "prometheus"
+      - name: OTEL_EXPORTER_PROMETHEUS_HOST
+        value: "0.0.0.0"
+      - name: OTEL_EXPORTER_PROMETHEUS_PORT
+        value: "9464"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_TRACES_EXPORTER
+        value: "none"
+
+  # Python — uses opentelemetry-instrument bootstrap.
+  python:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:latest
+    env:
+      - name: OTEL_METRICS_EXPORTER
+        value: "prometheus"
+      - name: OTEL_EXPORTER_PROMETHEUS_HOST
+        value: "0.0.0.0"
+      - name: OTEL_EXPORTER_PROMETHEUS_PORT
+        value: "9464"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_TRACES_EXPORTER
+        value: "none"
+
+  # Node.js — auto-instrumentation for Next.js / express / http.
+  nodejs:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:latest
+    env:
+      - name: OTEL_METRICS_EXPORTER
+        value: "prometheus"
+      - name: OTEL_EXPORTER_PROMETHEUS_HOST
+        value: "0.0.0.0"
+      - name: OTEL_EXPORTER_PROMETHEUS_PORT
+        value: "9464"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_TRACES_EXPORTER
+        value: "none"

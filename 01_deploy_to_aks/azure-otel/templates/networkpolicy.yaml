@@ -20,6 +20,19 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.spring.containerPort }}
+    {{- if and .Values.otel.enabled .Values.otel.scrapeNetworkPolicy }}
+    # Allow AKS managed Prometheus (ama-metrics) to scrape the OTel exporter.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              rsName: ama-metrics
+      ports:
+        - protocol: TCP
+          port: {{ .Values.otel.metricsPort }}
+    {{- end }}
 {{- end }}
 {{- if and .Values.networkPolicy.enabled .Values.networkPolicy.python.enabled .Values.python.enabled }}
 {{- $ctx := dict "root" . "svc" .Values.python "key" "python" }}

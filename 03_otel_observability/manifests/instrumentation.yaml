@@ -1,0 +1,73 @@
+# 03_otel_observability — OTel auto-instrumentation switched to OTLP/gRPC.
+#
+# Replaces the Prometheus exporter (:9464) of step 02 with OTLP/gRPC pointing
+# at the in-cluster OpenTelemetry Collector (otel-collector svc, port 4317).
+# Same Instrumentation name ("azure-otel") so the existing pod annotations
+# `instrumentation.opentelemetry.io/inject-{java|python|nodejs}: azure-otel`
+# continue to work without re-deploying the Helm chart.
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: azure-otel
+  namespace: azure-otel
+spec:
+  exporter:
+    # Cluster-internal Collector. Stays inside the VNet — no Internet egress.
+    endpoint: "http://otel-collector.azure-otel.svc.cluster.local:4317"
+  propagators:
+    - tracecontext
+    - baggage
+    - b3
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  resource:
+    addK8sUIDAttributes: true
+    resourceAttributes:
+      deployment.environment: "dev"
+
+  # ---- Per-language auto-instrumentation ----
+  # All three send traces + metrics over OTLP/gRPC. Logs stay off until the
+  # apps emit structured logs (out of scope here).
+
+  java:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:latest
+    env:
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: "grpc"
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "otlp"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_METRIC_EXPORT_INTERVAL
+        value: "30000"          # 30 s — matches Prometheus scrape cadence
+
+  python:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:latest
+    env:
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: "grpc"
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "otlp"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_METRIC_EXPORT_INTERVAL
+        value: "30000"
+
+  nodejs:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:latest
+    env:
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: "grpc"
+      - name: OTEL_TRACES_EXPORTER
+        value: "otlp"
+      - name: OTEL_METRICS_EXPORTER
+        value: "otlp"
+      - name: OTEL_LOGS_EXPORTER
+        value: "none"
+      - name: OTEL_METRIC_EXPORT_INTERVAL
+        value: "30000"

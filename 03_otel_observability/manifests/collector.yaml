@@ -1,0 +1,168 @@
+# OpenTelemetry Collector — receives OTLP from app SDKs and:
+#   - Sends traces to Application Insights (azuremonitor exporter)
+#   - Re-exposes metrics on :8889/metrics so AKS managed Prometheus
+#     (ama-metrics) can scrape them via the PodMonitor below.
+#
+# No AAD / Workload Identity / DCE remote-write needed: ama-metrics already
+# has its own DCR association in step 01 and ingests directly into AMW.
+# Traces stay private as long as App Insights is reachable through the AMPLS
+# private endpoint configured in the README.
+---
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel
+  namespace: azure-otel
+spec:
+  mode: deployment
+  replicas: 2
+  envFrom:
+    - secretRef:
+        name: otel-collector-secrets   # APPLICATIONINSIGHTS_CONNECTION_STRING
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
+  # Labels copied to pods so the PodMonitor can select them.
+  podLabels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: azure-otel
+  # Named ports so the PodMonitor can reference `prom` directly.
+  ports:
+    - name: prom
+      port: 8889
+      protocol: TCP
+  config:
+    extensions:
+      health_check: {}
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 2s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      batch:
+        send_batch_size: 8192
+        timeout: 5s
+      # Surface k8s metadata (pod, node, namespace) on every signal.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.node.name
+            - k8s.deployment.name
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: connection
+      # Map OTel resource attributes → Prometheus labels expected by the
+      # step-02 dashboards (`service`, `k8s_namespace`, `k8s_pod`).
+      transform/prom_labels:
+        metric_statements:
+          - context: resource
+            statements:
+              - set(attributes["service"], attributes["service.name"]) where attributes["service.name"] != nil
+              - set(attributes["k8s_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
+              - set(attributes["k8s_pod"], attributes["k8s.pod.name"]) where attributes["k8s.pod.name"] != nil
+
+    exporters:
+      # Traces → Application Insights (private via AMPLS when DNS is in place).
+      azuremonitor:
+        connection_string: ${env:APPLICATIONINSIGHTS_CONNECTION_STRING}
+        maxbatchsize: 1024
+        maxbatchinterval: 10s
+
+      # Metrics → re-exposed on :8889/metrics for ama-metrics to scrape.
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        send_timestamps: true
+        metric_expiration: 5m
+        resource_to_telemetry_conversion:
+          enabled: true
+        # Keep metric names identical to step 02 so dashboards work unchanged.
+        add_metric_suffixes: false
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [azuremonitor]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, transform/prom_labels, batch]
+          exporters: [prometheus]
+      telemetry:
+        metrics:
+          address: 0.0.0.0:8888
+---
+# k8sattributes processor needs read access to pods/namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector-k8sattributes
+rules:
+  - apiGroups: [""]
+    resources: [pods, namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [replicasets, deployments]
+    verbs: [get, list, watch]
+  - apiGroups: [extensions]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector-k8sattributes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector-k8sattributes
+subjects:
+  # OTel Operator creates this SA automatically as `<otelcol-name>-collector`.
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: azure-otel
+---
+# AKS managed Prometheus scrapes :8889/metrics on the collector pods.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: otel-collector
+  namespace: azure-otel
+  labels:
+    release: azure-otel
+spec:
+  namespaceSelector:
+    matchNames:
+      - azure-otel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  podMetricsEndpoints:
+    - port: prom
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 25s
+      scheme: http
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: collector_namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: collector_pod

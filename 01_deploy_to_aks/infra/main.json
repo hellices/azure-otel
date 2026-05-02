@@ -1,0 +1,730 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "11227036250784267644"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "metadata": {
+        "description": "Name of the azd environment; drives resource naming."
+      }
+    },
+    "location": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Primary location for all resources."
+      }
+    },
+    "principalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Object ID (oid) of the user/SP running azd up. Used to grant Grafana Admin and AKS RBAC. Leave empty to skip role assignments."
+      }
+    },
+    "enablePrivateCluster": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true, AKS API server is exposed only inside the VNet (private cluster). Defaults to false so kubectl works from your laptop."
+      }
+    },
+    "nodeCount": {
+      "type": "int",
+      "defaultValue": 3,
+      "minValue": 2,
+      "maxValue": 10,
+      "metadata": {
+        "description": "Number of AKS user-mode nodes for the default system pool."
+      }
+    },
+    "nodeVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_D4s_v5",
+      "metadata": {
+        "description": "VM size for AKS nodes."
+      }
+    }
+  },
+  "variables": {
+    "resourceToken": "[toLower(uniqueString(subscription().id, parameters('environmentName'), parameters('location')))]",
+    "tags": {
+      "azd-env-name": "[parameters('environmentName')]"
+    },
+    "locationNormalized": "[toLower(replace(parameters('location'), ' ', ''))]",
+    "locationShortMap": {
+      "koreacentral": "krc",
+      "koreasouth": "krs",
+      "eastus": "eus",
+      "eastus2": "eus2",
+      "westus": "wus",
+      "westus2": "wus2",
+      "westeurope": "weu",
+      "northeurope": "neu",
+      "southeastasia": "sea",
+      "japaneast": "jpe"
+    },
+    "locationShort": "[coalesce(variables('locationShortMap')[variables('locationNormalized')], substring(variables('locationNormalized'), 0, min(3, length(variables('locationNormalized')))))]",
+    "envShort": "[substring(toLower(replace(parameters('environmentName'), '-', '')), 0, min(6, length(replace(parameters('environmentName'), '-', ''))))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "resources",
+      "resourceGroup": "[format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "resourceToken": {
+            "value": "[variables('resourceToken')]"
+          },
+          "principalId": {
+            "value": "[parameters('principalId')]"
+          },
+          "enablePrivateCluster": {
+            "value": "[parameters('enablePrivateCluster')]"
+          },
+          "nodeCount": {
+            "value": "[parameters('nodeCount')]"
+          },
+          "nodeVmSize": {
+            "value": "[parameters('nodeVmSize')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "17900133421939435345"
+            }
+          },
+          "parameters": {
+            "environmentName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object"
+            },
+            "resourceToken": {
+              "type": "string"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "enablePrivateCluster": {
+              "type": "bool"
+            },
+            "nodeCount": {
+              "type": "int"
+            },
+            "nodeVmSize": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "workload": "otel",
+            "envNormalized": "[toLower(replace(parameters('environmentName'), '-', ''))]",
+            "envShort": "[substring(variables('envNormalized'), 0, min(6, length(variables('envNormalized'))))]",
+            "locationNormalized": "[toLower(replace(parameters('location'), ' ', ''))]",
+            "locationShortMap": {
+              "koreacentral": "krc",
+              "koreasouth": "krs",
+              "eastus": "eus",
+              "eastus2": "eus2",
+              "westus": "wus",
+              "westus2": "wus2",
+              "westeurope": "weu",
+              "northeurope": "neu",
+              "southeastasia": "sea",
+              "japaneast": "jpe"
+            },
+            "locationShort": "[coalesce(variables('locationShortMap')[variables('locationNormalized')], substring(variables('locationNormalized'), 0, min(3, length(variables('locationNormalized')))))]",
+            "uniqueSuffix": "[substring(parameters('resourceToken'), 0, 5)]",
+            "logAnalyticsName": "[format('law-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+            "appInsightsName": "[format('appi-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+            "amwName": "[format('amw-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+            "grafanaName": "[substring(format('graf-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 0, min(23, length(format('graf-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))))]",
+            "acrName": "[format('acr{0}{1}{2}{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+            "vnetName": "[format('vnet-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "aksName": "[format('aks-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "aksDnsPrefix": "[format('aks-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "aksSubnetNsgName": "[format('nsg-{0}-{1}-{2}-aks', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "agfcSubnetNsgName": "[format('nsg-{0}-{1}-{2}-agfc', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "monitoringDataReaderRoleId": "b0d8363b-8ddd-447d-831f-62ca05bff136",
+            "grafanaAdminRoleId": "22926164-76b3-42b3-bc55-97df8dab3e41",
+            "aksClusterAdminRoleId": "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8",
+            "aksClusterUserRoleId": "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
+            "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('aksSubnetNsgName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allow-internet-http-80",
+                    "properties": {
+                      "description": "Allow inbound HTTP from Internet to AKS subnet.",
+                      "priority": 200,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "80",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('agfcSubnetNsgName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allow-internet-http-80",
+                    "properties": {
+                      "description": "Allow inbound HTTP from Internet to AGFC subnet.",
+                      "priority": 200,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "80",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  },
+                  {
+                    "name": "allow-internet-https-443",
+                    "properties": {
+                      "description": "Allow inbound HTTPS from Internet to AGFC subnet.",
+                      "priority": 210,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('vnetName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.240.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "aks-subnet",
+                    "properties": {
+                      "addressPrefix": "10.240.0.0/22",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))]"
+                      },
+                      "privateLinkServiceNetworkPolicies": "Enabled"
+                    }
+                  },
+                  {
+                    "name": "aks-appgateway",
+                    "properties": {
+                      "addressPrefix": "10.240.8.0/24",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))]"
+                      },
+                      "delegations": [
+                        {
+                          "name": "agfc-delegation",
+                          "properties": {
+                            "serviceName": "Microsoft.ServiceNetworking/trafficControllers"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[variables('logAnalyticsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30,
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[variables('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Monitor/accounts",
+              "apiVersion": "2023-04-03",
+              "name": "[variables('amwName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {}
+            },
+            {
+              "type": "Microsoft.Insights/dataCollectionEndpoints",
+              "apiVersion": "2023-03-11",
+              "name": "[format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "Linux",
+              "properties": {
+                "networkAcls": {
+                  "publicNetworkAccess": "Enabled"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2023-03-11",
+              "name": "[format('dcr-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "Linux",
+              "properties": {
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "dataSources": {
+                  "prometheusForwarder": [
+                    {
+                      "name": "PrometheusDataSource",
+                      "streams": [
+                        "Microsoft-PrometheusMetrics"
+                      ],
+                      "labelIncludeFilter": {}
+                    }
+                  ]
+                },
+                "destinations": {
+                  "monitoringAccounts": [
+                    {
+                      "name": "MonitoringAccount1",
+                      "accountResourceId": "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]"
+                    }
+                  ]
+                },
+                "dataFlows": [
+                  {
+                    "streams": [
+                      "Microsoft-PrometheusMetrics"
+                    ],
+                    "destinations": [
+                      "MonitoringAccount1"
+                    ]
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]",
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Dashboard/grafana",
+              "apiVersion": "2023-09-01",
+              "name": "[variables('grafanaName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "grafanaIntegrations": {
+                  "azureMonitorWorkspaceIntegrations": [
+                    {
+                      "azureMonitorWorkspaceResourceId": "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]"
+                    }
+                  ]
+                },
+                "publicNetworkAccess": "Enabled",
+                "apiKey": "Disabled",
+                "deterministicOutboundIP": "Disabled",
+                "zoneRedundancy": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[variables('acrName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.ContainerService/managedClusters",
+              "apiVersion": "2024-09-01",
+              "name": "[variables('aksName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "sku": {
+                "name": "Base",
+                "tier": "Standard"
+              },
+              "properties": {
+                "dnsPrefix": "[variables('aksDnsPrefix')]",
+                "enableRBAC": true,
+                "disableLocalAccounts": false,
+                "apiServerAccessProfile": {
+                  "enablePrivateCluster": "[parameters('enablePrivateCluster')]"
+                },
+                "networkProfile": {
+                  "networkPlugin": "azure",
+                  "networkPluginMode": "overlay",
+                  "networkPolicy": "cilium",
+                  "networkDataplane": "cilium",
+                  "loadBalancerSku": "standard",
+                  "serviceCidr": "10.0.0.0/16",
+                  "dnsServiceIP": "10.0.0.10"
+                },
+                "agentPoolProfiles": [
+                  {
+                    "name": "system",
+                    "mode": "System",
+                    "osType": "Linux",
+                    "osSKU": "AzureLinux",
+                    "vmSize": "[parameters('nodeVmSize')]",
+                    "count": "[parameters('nodeCount')]",
+                    "minCount": "[parameters('nodeCount')]",
+                    "maxCount": 6,
+                    "vnetSubnetID": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aks-subnet')]",
+                    "type": "VirtualMachineScaleSets",
+                    "enableAutoScaling": true,
+                    "maxPods": 50
+                  }
+                ],
+                "addonProfiles": {
+                  "omsagent": {
+                    "enabled": true,
+                    "config": {
+                      "logAnalyticsWorkspaceResourceID": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]",
+                      "useAADAuth": "true"
+                    }
+                  }
+                },
+                "azureMonitorProfile": {
+                  "metrics": {
+                    "enabled": true,
+                    "kubeStateMetrics": {
+                      "metricLabelsAllowlist": "",
+                      "metricAnnotationsAllowList": ""
+                    }
+                  }
+                },
+                "oidcIssuerProfile": {
+                  "enabled": true
+                },
+                "securityProfile": {
+                  "workloadIdentity": {
+                    "enabled": true
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+              "apiVersion": "2023-03-11",
+              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+              "name": "send-to-amw",
+              "properties": {
+                "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules', format('dcr-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "description": "Send AKS managed Prometheus metrics to the Azure Monitor Workspace."
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+                "[resourceId('Microsoft.Insights/dataCollectionRules', format('dcr-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]",
+              "name": "[guid(resourceId('Microsoft.Monitor/accounts', variables('amwName')), resourceId('Microsoft.Dashboard/grafana', variables('grafanaName')), variables('monitoringDataReaderRoleId'))]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.Dashboard/grafana', variables('grafanaName')), '2023-09-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('monitoringDataReaderRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]",
+                "[resourceId('Microsoft.Dashboard/grafana', variables('grafanaName'))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Dashboard/grafana', variables('grafanaName'))]",
+              "name": "[guid(resourceId('Microsoft.Dashboard/grafana', variables('grafanaName')), parameters('principalId'), variables('grafanaAdminRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "User",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('grafanaAdminRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Dashboard/grafana', variables('grafanaName'))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerService/managedClusters', variables('aksName')), parameters('principalId'), variables('aksClusterUserRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "User",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('aksClusterUserRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerService/managedClusters', variables('aksName')), parameters('principalId'), variables('aksClusterAdminRoleId'))]",
+              "properties": {
+                "principalId": "[parameters('principalId')]",
+                "principalType": "User",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('aksClusterAdminRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), resourceId('Microsoft.ContainerService/managedClusters', variables('aksName')), variables('acrPullRoleId'))]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.ContainerService/managedClusters', variables('aksName')), '2024-09-01').identityProfile.kubeletidentity.objectId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "aksName": {
+              "type": "string",
+              "value": "[variables('aksName')]"
+            },
+            "logAnalyticsName": {
+              "type": "string",
+              "value": "[variables('logAnalyticsName')]"
+            },
+            "appInsightsName": {
+              "type": "string",
+              "value": "[variables('appInsightsName')]"
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "amwName": {
+              "type": "string",
+              "value": "[variables('amwName')]"
+            },
+            "grafanaName": {
+              "type": "string",
+              "value": "[variables('grafanaName')]"
+            },
+            "grafanaEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Dashboard/grafana', variables('grafanaName')), '2023-09-01').endpoint]"
+            },
+            "acrName": {
+              "type": "string",
+              "value": "[variables('acrName')]"
+            },
+            "acrLoginServer": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]"
+            },
+            "vnetName": {
+              "type": "string",
+              "value": "[variables('vnetName')]"
+            },
+            "agfcSubnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aks-appgateway')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "AZURE_LOCATION": {
+      "type": "string",
+      "value": "[parameters('location')]"
+    },
+    "AZURE_TENANT_ID": {
+      "type": "string",
+      "value": "[subscription().tenantId]"
+    },
+    "AZURE_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))]"
+    },
+    "AKS_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.aksName.value]"
+    },
+    "AKS_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))]"
+    },
+    "LOG_ANALYTICS_WORKSPACE_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.logAnalyticsName.value]"
+    },
+    "APPLICATION_INSIGHTS_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.appInsightsName.value]"
+    },
+    "APPLICATION_INSIGHTS_CONNECTION_STRING": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+    },
+    "AZURE_MONITOR_WORKSPACE_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.amwName.value]"
+    },
+    "GRAFANA_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.grafanaName.value]"
+    },
+    "GRAFANA_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.grafanaEndpoint.value]"
+    },
+    "ACR_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.acrName.value]"
+    },
+    "ACR_LOGIN_SERVER": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.acrLoginServer.value]"
+    },
+    "AGFC_SUBNET_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.agfcSubnetId.value]"
+    },
+    "VNET_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.vnetName.value]"
+    }
+  }
+}

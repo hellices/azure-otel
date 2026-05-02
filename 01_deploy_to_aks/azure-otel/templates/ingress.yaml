@@ -1,45 +1,89 @@
-{{- if .Values.ingress.enabled }}
+{{- if .Values.gateway.enabled }}
 {{- $nodeCtx := dict "root" . "svc" .Values.nodejs "key" "nodejs" }}
 {{- $pyCtx   := dict "root" . "svc" .Values.python "key" "python" }}
-{{- $apiPrefix := .Values.ingress.apiPathPrefix | default "/api" }}
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+{{- $apiPrefix := .Values.gateway.apiPathPrefix | default "/api" }}
+# ---------- ApplicationLoadBalancer CR ----------
+# ALB Controller watches this and provisions the AGFC resource + associates
+# the delegated subnet.  Requires gateway.subnetId to be set at install time.
+apiVersion: alb.networking.azure.io/v1
+kind: ApplicationLoadBalancer
 metadata:
-  name: {{ .Release.Name }}-azure-otel
+  name: {{ .Values.gateway.albName }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "azure-otel.commonLabels" $nodeCtx | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
 spec:
-  {{- with .Values.ingress.className }}
-  ingressClassName: {{ . }}
-  {{- end }}
-  {{- with .Values.ingress.tls }}
-  tls:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  associations:
+  - {{ .Values.gateway.subnetId | quote }}
+---
+# ---------- Gateway ----------
+# References the ApplicationLoadBalancer above via annotations.
+# gatewayClassName azure-alb-external is registered by the ALB Controller add-on.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Release.Name }}-gw
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "azure-otel.commonLabels" $nodeCtx | nindent 4 }}
+  annotations:
+    alb.networking.azure.io/alb-namespace: {{ .Release.Namespace }}
+    alb.networking.azure.io/alb-name: {{ .Values.gateway.albName }}
+spec:
+  gatewayClassName: azure-alb-external
+  listeners:
+  - name: http
+    port: {{ .Values.gateway.listener.port }}
+    protocol: {{ .Values.gateway.listener.protocol }}
+    allowedRoutes:
+      namespaces:
+        from: Same
+---
+# ---------- HTTPRoute: web (/ -> nodejs SPA) ----------
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "azure-otel.commonLabels" $nodeCtx | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Release.Name }}-gw
+    namespace: {{ .Release.Namespace }}
   rules:
-    - {{- with .Values.ingress.host }}
-      host: {{ . | quote }}
-      {{- end }}
-      http:
-        paths:
-          # /api/* -> python edge (browser calls same-origin to avoid CORS)
-          - path: {{ $apiPrefix }}
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "azure-otel.fullname" $pyCtx }}
-                port:
-                  number: {{ .Values.python.service.port }}
-          # / -> nodejs SPA
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "azure-otel.fullname" $nodeCtx }}
-                port:
-                  number: {{ .Values.nodejs.service.port }}
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: {{ include "azure-otel.fullname" $nodeCtx }}
+      port: {{ .Values.nodejs.service.port }}
+---
+# ---------- HTTPRoute: api (/api -> python, strip /api prefix) ----------
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "azure-otel.commonLabels" $pyCtx | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Release.Name }}-gw
+    namespace: {{ .Release.Namespace }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: {{ $apiPrefix }}
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: {{ include "azure-otel.fullname" $pyCtx }}
+      port: {{ .Values.python.service.port }}
 {{- end }}

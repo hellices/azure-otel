@@ -1,0 +1,1218 @@
+{
+    "title":  "Azure-OTel - Python",
+    "uid":  "azure-otel-python",
+    "tags":  [
+
+             ],
+    "schemaVersion":  42,
+    "timezone":  "browser",
+    "time":  {
+                 "from":  "now-1h",
+                 "to":  "now"
+             },
+    "editable":  true,
+    "templating":  {
+                       "list":  [
+                                    {
+                                        "name":  "namespace",
+                                        "type":  "query",
+                                        "datasource":  {
+                                                           "type":  "prometheus",
+                                                           "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                       },
+                                        "query":  {
+                                                      "qryType":  1,
+                                                      "query":  "label_values(up{service=\"python\"}, k8s_namespace)",
+                                                      "refId":  "PrometheusVariableQueryEditor-VariableQuery"
+                                                  },
+                                        "definition":  "label_values(up{service=\"python\"}, k8s_namespace)",
+                                        "refresh":  1,
+                                        "current":  {
+                                                        "text":  "azure-otel",
+                                                        "value":  "azure-otel"
+                                                    },
+                                        "allowCustomValue":  false,
+                                        "regex":  "",
+                                        "options":  [
+
+                                                    ]
+                                    },
+                                    {
+                                        "name":  "pod",
+                                        "type":  "query",
+                                        "datasource":  {
+                                                           "type":  "prometheus",
+                                                           "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                       },
+                                        "query":  {
+                                                      "qryType":  1,
+                                                      "query":  "label_values(up{k8s_namespace=\"$namespace\", service=\"python\"}, k8s_pod)",
+                                                      "refId":  "PrometheusVariableQueryEditor-VariableQuery"
+                                                  },
+                                        "definition":  "label_values(up{k8s_namespace=\"$namespace\", service=\"python\"}, k8s_pod)",
+                                        "refresh":  1,
+                                        "includeAll":  true,
+                                        "allValue":  ".*",
+                                        "multi":  true,
+                                        "current":  {
+                                                        "text":  [
+                                                                     "All"
+                                                                 ],
+                                                        "value":  [
+                                                                      "$__all"
+                                                                  ]
+                                                    },
+                                        "allowCustomValue":  false,
+                                        "regex":  "",
+                                        "options":  [
+
+                                                    ]
+                                    }
+                                ]
+                   },
+    "annotations":  {
+                        "list":  [
+                                     {
+                                         "hide":  true,
+                                         "iconColor":  "rgba(0, 211, 255, 1)",
+                                         "builtIn":  1,
+                                         "datasource":  {
+                                                            "type":  "grafana",
+                                                            "uid":  "-- Grafana --"
+                                                        },
+                                         "type":  "dashboard",
+                                         "name":  "Annotations \u0026 Alerts",
+                                         "enable":  true
+                                     }
+                                 ]
+                    },
+    "panels":  [
+                   {
+                       "id":  1,
+                       "type":  "stat",
+                       "title":  "Pods up",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  0,
+                                       "w":  4,
+                                       "h":  4
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "count(up{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"} == 1)",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "legendFormat":  "__auto",
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "short",
+                                                            "color":  {
+                                                                          "mode":  "thresholds"
+                                                                      },
+                                                            "thresholds":  {
+                                                                               "mode":  "absolute",
+                                                                               "steps":  [
+                                                                                             {
+                                                                                                 "color":  "red",
+                                                                                                 "value":  null
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "green",
+                                                                                                 "value":  1
+                                                                                             }
+                                                                                         ]
+                                                                           }
+                                                        }
+                                       },
+                       "options":  {
+                                       "reduceOptions":  {
+                                                             "calcs":  [
+                                                                           "lastNotNull"
+                                                                       ],
+                                                             "fields":  "",
+                                                             "values":  false
+                                                         },
+                                       "colorMode":  "value",
+                                       "graphMode":  "none",
+                                       "textMode":  "auto"
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  2,
+                       "type":  "stat",
+                       "title":  "Request rate",
+                       "gridPos":  {
+                                       "x":  4,
+                                       "y":  0,
+                                       "w":  5,
+                                       "h":  4
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "legendFormat":  "__auto",
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "reqps",
+                                                            "decimals":  2,
+                                                            "color":  {
+                                                                          "mode":  "thresholds"
+                                                                      },
+                                                            "thresholds":  {
+                                                                               "mode":  "absolute",
+                                                                               "steps":  [
+                                                                                             {
+                                                                                                 "color":  "blue",
+                                                                                                 "value":  null
+                                                                                             }
+                                                                                         ]
+                                                                           }
+                                                        }
+                                       },
+                       "options":  {
+                                       "reduceOptions":  {
+                                                             "calcs":  [
+                                                                           "lastNotNull"
+                                                                       ],
+                                                             "fields":  "",
+                                                             "values":  false
+                                                         },
+                                       "colorMode":  "value",
+                                       "graphMode":  "area",
+                                       "textMode":  "auto"
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  3,
+                       "type":  "stat",
+                       "title":  "Error rate (5xx)",
+                       "gridPos":  {
+                                       "x":  9,
+                                       "y":  0,
+                                       "w":  5,
+                                       "h":  4
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "(sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])), 1e-9)",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "legendFormat":  "__auto",
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "percentunit",
+                                                            "decimals":  2,
+                                                            "min":  0,
+                                                            "max":  1,
+                                                            "color":  {
+                                                                          "mode":  "thresholds"
+                                                                      },
+                                                            "thresholds":  {
+                                                                               "mode":  "absolute",
+                                                                               "steps":  [
+                                                                                             {
+                                                                                                 "color":  "green",
+                                                                                                 "value":  null
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "yellow",
+                                                                                                 "value":  0.01
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "red",
+                                                                                                 "value":  0.05
+                                                                                             }
+                                                                                         ]
+                                                                           }
+                                                        }
+                                       },
+                       "options":  {
+                                       "reduceOptions":  {
+                                                             "calcs":  [
+                                                                           "lastNotNull"
+                                                                       ],
+                                                             "fields":  "",
+                                                             "values":  false
+                                                         },
+                                       "colorMode":  "value",
+                                       "graphMode":  "area",
+                                       "textMode":  "auto"
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  4,
+                       "type":  "stat",
+                       "title":  "Latency p95",
+                       "gridPos":  {
+                                       "x":  14,
+                                       "y":  0,
+                                       "w":  5,
+                                       "h":  4
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "legendFormat":  "__auto",
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "ms",
+                                                            "decimals":  1,
+                                                            "color":  {
+                                                                          "mode":  "thresholds"
+                                                                      },
+                                                            "thresholds":  {
+                                                                               "mode":  "absolute",
+                                                                               "steps":  [
+                                                                                             {
+                                                                                                 "color":  "green",
+                                                                                                 "value":  null
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "yellow",
+                                                                                                 "value":  200
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "red",
+                                                                                                 "value":  1000
+                                                                                             }
+                                                                                         ]
+                                                                           }
+                                                        }
+                                       },
+                       "options":  {
+                                       "reduceOptions":  {
+                                                             "calcs":  [
+                                                                           "lastNotNull"
+                                                                       ],
+                                                             "fields":  "",
+                                                             "values":  false
+                                                         },
+                                       "colorMode":  "value",
+                                       "graphMode":  "area",
+                                       "textMode":  "auto"
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  5,
+                       "type":  "stat",
+                       "title":  "Active in-flight",
+                       "gridPos":  {
+                                       "x":  19,
+                                       "y":  0,
+                                       "w":  5,
+                                       "h":  4
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum(http_server_active_requests{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "legendFormat":  "__auto",
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "short",
+                                                            "decimals":  0,
+                                                            "color":  {
+                                                                          "mode":  "thresholds"
+                                                                      },
+                                                            "thresholds":  {
+                                                                               "mode":  "absolute",
+                                                                               "steps":  [
+                                                                                             {
+                                                                                                 "color":  "blue",
+                                                                                                 "value":  null
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "yellow",
+                                                                                                 "value":  50
+                                                                                             },
+                                                                                             {
+                                                                                                 "color":  "red",
+                                                                                                 "value":  200
+                                                                                             }
+                                                                                         ]
+                                                                           }
+                                                        }
+                                       },
+                       "options":  {
+                                       "reduceOptions":  {
+                                                             "calcs":  [
+                                                                           "lastNotNull"
+                                                                       ],
+                                                             "fields":  "",
+                                                             "values":  false
+                                                         },
+                                       "colorMode":  "value",
+                                       "graphMode":  "area",
+                                       "textMode":  "auto"
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  10,
+                       "type":  "row",
+                       "title":  "HTTP traffic",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  4,
+                                       "w":  24,
+                                       "h":  1
+                                   },
+                       "collapsed":  false,
+                       "panels":  [
+
+                                  ]
+                   },
+                   {
+                       "id":  11,
+                       "type":  "timeseries",
+                       "title":  "Request rate by route - status",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  5,
+                                       "w":  12,
+                                       "h":  8
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum by (http_target, http_status_code) (rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "legendFormat":  "{{http_target}} {{http_status_code}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "reqps",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  1,
+                                                                           "fillOpacity":  10,
+                                                                           "stacking":  {
+                                                                                            "mode":  "normal",
+                                                                                            "group":  "A"
+                                                                                        }
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  12,
+                       "type":  "timeseries",
+                       "title":  "Error rate (4xx - 5xx)",
+                       "gridPos":  {
+                                       "x":  12,
+                                       "y":  5,
+                                       "w":  12,
+                                       "h":  8
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\", http_status_code=~\"4..\"}[5m]))",
+                                           "legendFormat":  "4xx",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "B",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m]))",
+                                           "legendFormat":  "5xx",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "reqps",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  15
+                                                                       }
+                                                        },
+                                           "overrides":  [
+                                                             {
+                                                                 "matcher":  {
+                                                                                 "id":  "byName",
+                                                                                 "options":  "4xx"
+                                                                             },
+                                                                 "properties":  [
+                                                                                    {
+                                                                                        "id":  "color",
+                                                                                        "value":  {
+                                                                                                      "mode":  "fixed",
+                                                                                                      "fixedColor":  "yellow"
+                                                                                                  }
+                                                                                    }
+                                                                                ]
+                                                             },
+                                                             {
+                                                                 "matcher":  {
+                                                                                 "id":  "byName",
+                                                                                 "options":  "5xx"
+                                                                             },
+                                                                 "properties":  [
+                                                                                    {
+                                                                                        "id":  "color",
+                                                                                        "value":  {
+                                                                                                      "mode":  "fixed",
+                                                                                                      "fixedColor":  "red"
+                                                                                                  }
+                                                                                    }
+                                                                                ]
+                                                             }
+                                                         ]
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  20,
+                       "type":  "row",
+                       "title":  "Latency",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  13,
+                                       "w":  24,
+                                       "h":  1
+                                   },
+                       "collapsed":  false,
+                       "panels":  [
+
+                                  ]
+                   },
+                   {
+                       "id":  21,
+                       "type":  "timeseries",
+                       "title":  "Inbound latency percentiles",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  14,
+                                       "w":  12,
+                                       "h":  8
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "histogram_quantile(0.50, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "legendFormat":  "p50",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "B",
+                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "legendFormat":  "p95",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "C",
+                                           "expr":  "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "legendFormat":  "p99",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "ms",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  10
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  22,
+                       "type":  "heatmap",
+                       "title":  "Inbound latency distribution",
+                       "gridPos":  {
+                                       "x":  12,
+                                       "y":  14,
+                                       "w":  12,
+                                       "h":  8
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "format":  "heatmap",
+                                           "legendFormat":  "{{le}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "options":  {
+                                       "calculate":  false,
+                                       "yAxis":  {
+                                                     "unit":  "ms"
+                                                 },
+                                       "color":  {
+                                                     "scheme":  "Spectral",
+                                                     "mode":  "scheme",
+                                                     "scale":  "exponential",
+                                                     "exponent":  0.5,
+                                                     "steps":  64,
+                                                     "reverse":  false
+                                                 },
+                                       "cellGap":  1,
+                                       "tooltip":  {
+                                                       "mode":  "single",
+                                                       "yHistogram":  false,
+                                                       "showColorScale":  false
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  30,
+                       "type":  "row",
+                       "title":  "Response size",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  22,
+                                       "w":  24,
+                                       "h":  1
+                                   },
+                       "collapsed":  false,
+                       "panels":  [
+
+                                  ]
+                   },
+                   {
+                       "id":  31,
+                       "type":  "timeseries",
+                       "title":  "Response throughput by route",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  23,
+                                       "w":  12,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum by (http_target) (rate(http_server_response_size_bytes_sum{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "legendFormat":  "{{http_target}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "Bps",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  1,
+                                                                           "fillOpacity":  10,
+                                                                           "stacking":  {
+                                                                                            "mode":  "normal",
+                                                                                            "group":  "A"
+                                                                                        }
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  32,
+                       "type":  "timeseries",
+                       "title":  "Response size p95",
+                       "gridPos":  {
+                                       "x":  12,
+                                       "y":  23,
+                                       "w":  12,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "histogram_quantile(0.95, sum by (le, http_target) (rate(http_server_response_size_bytes_bucket{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "legendFormat":  "{{http_target}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "bytes",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  0
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  40,
+                       "type":  "row",
+                       "title":  "Python runtime",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  30,
+                                       "w":  24,
+                                       "h":  1
+                                   },
+                       "collapsed":  false,
+                       "panels":  [
+
+                                  ]
+                   },
+                   {
+                       "id":  41,
+                       "type":  "timeseries",
+                       "title":  "Process CPU utilisation",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  31,
+                                       "w":  8,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "avg by (k8s_pod) (process_cpu_utilization{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "percentunit",
+                                                            "min":  0,
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  10
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  42,
+                       "type":  "timeseries",
+                       "title":  "Process memory",
+                       "gridPos":  {
+                                       "x":  8,
+                                       "y":  31,
+                                       "w":  8,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "max by (k8s_pod) (process_resident_memory_bytes{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}} rss",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "B",
+                                           "expr":  "max by (k8s_pod) (process_memory_usage_bytes{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}} usage",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "C",
+                                           "expr":  "max by (k8s_pod) (process_virtual_memory_bytes{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}} virtual",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "bytes",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  10
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  43,
+                       "type":  "timeseries",
+                       "title":  "Open file descriptors",
+                       "gridPos":  {
+                                       "x":  16,
+                                       "y":  31,
+                                       "w":  8,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "max by (k8s_pod) (process_open_fds{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}} open",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "B",
+                                           "expr":  "max by (k8s_pod) (process_max_fds{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "{{k8s_pod}} max",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "short",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  0
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  44,
+                       "type":  "timeseries",
+                       "title":  "GC collections (rate)",
+                       "gridPos":  {
+                                       "x":  0,
+                                       "y":  38,
+                                       "w":  12,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "sum by (generation) (rate(python_gc_collections_total{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "legendFormat":  "gen {{generation}}",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "ops",
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  10
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   },
+                   {
+                       "id":  45,
+                       "type":  "timeseries",
+                       "title":  "System CPU - memory utilisation",
+                       "gridPos":  {
+                                       "x":  12,
+                                       "y":  38,
+                                       "w":  12,
+                                       "h":  7
+                                   },
+                       "datasource":  {
+                                          "type":  "prometheus",
+                                          "uid":  "amw-otel-otlp-krc-rvgcy"
+                                      },
+                       "targets":  [
+                                       {
+                                           "refId":  "A",
+                                           "expr":  "avg(system_cpu_utilization{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\"})",
+                                           "legendFormat":  "cpu",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       },
+                                       {
+                                           "refId":  "B",
+                                           "expr":  "avg(system_memory_utilization{k8s_namespace=\"$namespace\", service=\"python\", k8s_pod=~\"$pod\", state=\"used\"})",
+                                           "legendFormat":  "mem used",
+                                           "editorMode":  "code",
+                                           "range":  true,
+                                           "instant":  false,
+                                           "datasource":  {
+                                                              "type":  "prometheus",
+                                                              "uid":  "amw-otel-otlp-krc-rvgcy"
+                                                          }
+                                       }
+                                   ],
+                       "fieldConfig":  {
+                                           "defaults":  {
+                                                            "unit":  "percentunit",
+                                                            "min":  0,
+                                                            "max":  1,
+                                                            "custom":  {
+                                                                           "drawStyle":  "line",
+                                                                           "lineWidth":  2,
+                                                                           "fillOpacity":  10
+                                                                       }
+                                                        }
+                                       },
+                       "options":  {
+                                       "legend":  {
+                                                      "calcs":  [
+                                                                    "mean",
+                                                                    "max",
+                                                                    "last"
+                                                                ],
+                                                      "displayMode":  "table",
+                                                      "placement":  "bottom"
+                                                  },
+                                       "tooltip":  {
+                                                       "mode":  "multi",
+                                                       "sort":  "desc"
+                                                   }
+                                   },
+                       "pluginVersion":  "12.3.1"
+                   }
+               ],
+    "fiscalYearStartMonth":  0,
+    "graphTooltip":  0,
+    "preload":  false,
+    "weekStart":  "",
+    "timepicker":  {
+
+                   },
+    "links":  [
+
+              ]
+}

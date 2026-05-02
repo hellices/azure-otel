@@ -3,7 +3,7 @@ Common labels and helpers for the azure-otel chart.
 */}}
 
 {{- define "azure-otel.fullname" -}}
-{{- printf "%s-%s" .Release.Name .svc.name | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-%s" .root.Release.Name .svc.name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "azure-otel.image" -}}

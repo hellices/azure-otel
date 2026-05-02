@@ -1,0 +1,21 @@
+{{- range $key, $svc := dict "spring" .Values.spring "python" .Values.python "nodejs" .Values.nodejs }}
+{{- if $svc.enabled }}
+{{- $ctx := dict "root" $ "svc" $svc "key" $key }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "azure-otel.fullname" $ctx }}
+  labels:
+    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+spec:
+  type: {{ $svc.service.type }}
+  selector:
+    {{- include "azure-otel.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $svc.service.port }}
+      targetPort: {{ $svc.containerPort }}
+      protocol: TCP
+{{- end }}
+{{- end }}

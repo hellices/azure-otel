@@ -1,0 +1,37 @@
+# PodMonitor for the three azure-otel apps. ama-metrics scrapes :9464/metrics
+# exposed by the OpenTelemetry SDK's Prometheus exporter and pushes to AMW.
+#
+# AKS managed Prometheus uses a forked CRD group (azmonitoring.coreos.com) to
+# avoid clashing with the upstream prometheus-operator. The schema is otherwise
+# identical to monitoring.coreos.com/v1.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: azure-otel-apps
+  namespace: azure-otel
+  labels:
+    # ama-metrics picks up PodMonitors across all namespaces by default; the
+    # release label is informational.
+    release: azure-otel
+spec:
+  namespaceSelector:
+    matchNames:
+      - azure-otel
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [spring, python, nodejs]
+  podMetricsEndpoints:
+    - port: otel-metrics       # named port added in the next manifest
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 25s       # Spring's first scrape can be slow during JVM warmup
+      scheme: http
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          targetLabel: service
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: k8s_namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: k8s_pod

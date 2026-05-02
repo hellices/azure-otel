@@ -79,10 +79,10 @@ nodejs:
     port: 3000
   # PYTHON_API_BASE_URL is served to the BROWSER via /config.js, so it must be a
   # publicly reachable URL (NOT a cluster-internal DNS name).
-  #   - When ingress.enabled=true, leaving this empty makes the SPA call the
-  #     same origin under /api (the ingress routes /api -> python).
+  #   - When gateway.enabled=true, leaving this empty makes the SPA call the
+  #     same origin under /api (AGFC routes /api -> python, stripping the prefix).
   #   - Otherwise, set it to the public URL of the FastAPI edge.
-  pythonPublicBaseUrl: ""
+  pythonPublicBaseUrl: "/api"
   env:
     PORT: "3000"
     NODE_ENV: "production"
@@ -98,22 +98,43 @@ nodejs:
     initialDelaySeconds: 5
     periodSeconds: 5
 
-# ---- Public entry (Ingress) ----
-# Disabled by default; enable when AKS has an ingress controller (e.g., AGIC, nginx, web app routing).
-# When enabled, the ingress exposes:
+# ---- Public entry (Gateway API + Application Gateway for Containers) ----
+# Requires the AKS ALB Controller add-on to be enabled on the cluster.
+# azd up runs the postprovision hook which enables the add-on and sets
+# gateway.subnetId automatically.
+#
+# When enabled, AGFC exposes:
 #   /        -> nodejs   (SPA)
-#   /api/*   -> python   (FastAPI edge; browser calls same-origin, no CORS)
+#   /api/*   -> python   (FastAPI edge; /api prefix is stripped before forwarding)
 # Spring is intentionally NOT exposed; it is only reachable from Python pods
 # inside the cluster (enforced by networkPolicy below).
-ingress:
-  enabled: false
-  className: ""                       # e.g., "webapprouting.kubernetes.azure.com" or "nginx"
-  annotations: {}
-  host: ""                            # e.g., "azure-otel.example.com"; empty = host-less rule
-  tls: []                             # [{ secretName: tls-secret, hosts: [example.com] }]
-  # Strip /api prefix before forwarding to python (so browser /api/items -> python /items).
-  # Implementation depends on the ingress controller; see README for examples.
+gateway:
+  enabled: true
+  albName: "alb"              # Name for the ApplicationLoadBalancer CR
+  subnetId: ""                # Set at install time via --set gateway.subnetId=...
+  listener:
+    port: 80
+    protocol: HTTP
+  # Path prefix matched by AGFC and stripped via URLRewrite before forwarding to python.
   apiPathPrefix: "/api"
+
+# ---- OpenTelemetry auto-instrumentation (used by 02_metrics_via_podmonitor) ----
+# When enabled, every app Deployment gets:
+#   - a Pod-template annotation `instrumentation.opentelemetry.io/inject-<lang>`
+#     so the OTel Operator's webhook injects the language SDK init container
+#   - a named container port `otel-metrics: 9464` exposing the Prometheus exporter
+# AKS managed Prometheus scrapes this port via the PodMonitor in step 02.
+# It's safe to leave this on even before installing the Operator: the annotation
+# is a no-op until the Instrumentation CR named in `instrumentationName` exists.
+otel:
+  enabled: true
+  instrumentationName: azure-otel  # must match Instrumentation CR in same namespace
+  metricsPort: 9464
+  metricsPortName: otel-metrics
+  # Allow ama-metrics (kube-system) to scrape :9464 even when default-deny
+  # NetworkPolicy is in place. Only takes effect for services that already have
+  # a NetworkPolicy (currently spring); nodejs/python have no NP and accept by default.
+  scrapeNetworkPolicy: true
 
 # ---- NetworkPolicy: enforce server-to-server calls stay inside the cluster ----
 # Defaults ON for Spring (the database tier). When enabled, the cluster CNI

@@ -2,22 +2,6 @@
 {{- if $svc.enabled }}
 {{- $ctx := dict "root" $ "svc" $svc "key" $key }}
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "azure-otel.fullname" $ctx }}
-  labels:
-    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
-spec:
-  type: {{ $svc.service.type }}
-  selector:
-    {{- include "azure-otel.selectorLabels" $ctx | nindent 4 }}
-  ports:
-    - name: http
-      port: {{ $svc.service.port }}
-      targetPort: {{ $svc.containerPort }}
-      protocol: TCP
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,6 +10,11 @@ metadata:
     {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
 spec:
   replicas: {{ $svc.replicaCount }}
+  {{- if and (eq $key "spring") $svc.persistence.enabled }}
+  # RWO PVC + RollingUpdate deadlocks (new pod can't attach the volume).
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "azure-otel.selectorLabels" $ctx | nindent 6 }}
@@ -33,6 +22,12 @@ spec:
     metadata:
       labels:
         {{- include "azure-otel.commonLabels" $ctx | nindent 8 }}
+      {{- if $.Values.otel.enabled }}
+      annotations:
+        {{- $lang := index (dict "spring" "java" "python" "python" "nodejs" "nodejs") $key }}
+        instrumentation.opentelemetry.io/inject-{{ $lang }}: {{ $.Values.otel.instrumentationName | quote }}
+        instrumentation.opentelemetry.io/container-names: {{ $svc.name | quote }}
+      {{- end }}
     spec:
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -46,6 +41,11 @@ spec:
             - name: http
               containerPort: {{ $svc.containerPort }}
               protocol: TCP
+            {{- if $.Values.otel.enabled }}
+            - name: {{ $.Values.otel.metricsPortName }}
+              containerPort: {{ $.Values.otel.metricsPort }}
+              protocol: TCP
+            {{- end }}
           env:
             {{- range $k, $v := $svc.env }}
             - name: {{ $k }}
@@ -59,13 +59,9 @@ spec:
             {{- end }}
             {{- if eq $key "nodejs" }}
             {{- if not (hasKey $svc.env "PYTHON_API_BASE_URL") }}
-            {{- /* Browser-facing URL. Prefer explicit value; otherwise fall back to
-                   same-origin /api when ingress is enabled (browser calls Node's host
-                   and the ingress routes /api -> python). NEVER use cluster DNS here:
-                   the browser cannot resolve <release>-python:8000. */ -}}
             {{- $public := $svc.pythonPublicBaseUrl -}}
-            {{- if and (not $public) $.Values.ingress.enabled -}}
-              {{- $public = $.Values.ingress.apiPathPrefix -}}
+            {{- if and (not $public) $.Values.gateway.enabled -}}
+              {{- $public = $.Values.gateway.apiPathPrefix -}}
             {{- end }}
             - name: PYTHON_API_BASE_URL
               value: {{ $public | quote }}
@@ -94,23 +90,5 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "azure-otel.fullname" $ctx }}-data
       {{- end }}
-{{- if and (eq $key "spring") $svc.persistence.enabled }}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "azure-otel.fullname" $ctx }}-data
-  labels:
-    {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
-spec:
-  accessModes:
-    {{- toYaml $svc.persistence.accessModes | nindent 4 }}
-  {{- with $svc.persistence.storageClassName }}
-  storageClassName: {{ . | quote }}
-  {{- end }}
-  resources:
-    requests:
-      storage: {{ $svc.persistence.size }}
-{{- end }}
 {{- end }}
 {{- end }}
