@@ -21,19 +21,6 @@ three **Managed Grafana** dashboards (Node.js / Python / Spring).
                                             nodejs.json / python.json / spring.json
 ```
 
-## Folder layout
-
-```
-02_metrics_via_podmonitor/
-├─ manifests/
-│  ├─ instrumentation.yaml   # Instrumentation CR (java/python/nodejs)
-│  └─ podmonitor.yaml        # PodMonitor (azmonitoring.coreos.com/v1)
-└─ dashboards/
-   ├─ nodejs.json
-   ├─ python.json
-   └─ spring.json
-```
-
 ## What the chart already does (step 01)
 
 When `otel.enabled=true` (the default), the Helm chart from step 01 already

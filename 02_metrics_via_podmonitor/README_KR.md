@@ -21,19 +21,6 @@
                                             nodejs.json / python.json / spring.json
 ```
 
-## 폴더 구조
-
-```
-02_metrics_via_podmonitor/
-├─ manifests/
-│  ├─ instrumentation.yaml          # Instrumentation CR (java/python/nodejs)
-│  └─ podmonitor.yaml               # PodMonitor (azmonitoring.coreos.com/v1)
-└─ dashboards/
-   ├─ nodejs.json
-   ├─ python.json
-   └─ spring.json
-```
-
 ## 차트가 이미 해주는 것 (01단계)
 
 01단계 Helm 차트가 `otel.enabled=true` (기본값)일 때 아래를 자동으로

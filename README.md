@@ -84,18 +84,6 @@ cd ..\
 
 Each stage README has the exact commands and verification steps.
 
-## Layout
-
-```
-azure-otel/
-├─ 01_deploy_to_aks/          # Bicep (AKS/AMW/AppI/Grafana/AMPLS) + Helm chart
-├─ 02_metrics_via_podmonitor/ # Instrumentation CR + PodMonitor + Grafana dashboards
-├─ 03_otel_observability/     # OTel Collector + Instrumentation (OTLP)
-├─ base_apps/                 # Sample app sources (Next.js / FastAPI / Spring Boot)
-├─ docs/diagrams/             # Excalidraw architecture diagrams
-└─ .github/                   # Copilot instructions + domain guides
-```
-
 ## Tech used
 
 - **Compute / network**: AKS (Azure CNI overlay + Cilium), AGFC (Gateway API), VNet, Private Endpoint

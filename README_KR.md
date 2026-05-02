@@ -82,18 +82,6 @@ cd ..\
 
 각 단계 README가 정확한 명령과 검증 방법을 포함합니다.
 
-## 폴더 구조
-
-```
-azure-otel/
-├─ 01_deploy_to_aks/          # Bicep (AKS/AMW/AppI/Grafana/AMPLS) + Helm chart
-├─ 02_metrics_via_podmonitor/ # Instrumentation CR + PodMonitor + Grafana 대시보드
-├─ 03_otel_observability/     # OTel Collector + Instrumentation (OTLP)
-├─ base_apps/                 # 샘플 앱 소스 (Next.js / FastAPI / Spring Boot)
-├─ docs/diagrams/             # Excalidraw 아키텍처 다이어그램
-└─ .github/                   # Copilot instructions + 도메인 가이드
-```
-
 ## 사용 기술
 
 - **Compute / Network**: AKS (Azure CNI overlay + Cilium), AGFC (Gateway API), VNet, Private Endpoint
