@@ -68,6 +68,14 @@ OTel's native profiles signal is still in Development as of 2026-05.
 > and ship to the collector (Alloy `faro.receiver`). Faro's tracer is built on
 > OTel Web, so `traceparent` flows through to the backend spans end-to-end.
 
+> **(Optional) Stage 05 — eBPF auto-instrumentation with OTel OBI** — see
+> [`05_ebpf_with_obi/`](./05_ebpf_with_obi). Runs OpenTelemetry OBI
+> (formerly Grafana Beyla) as a DaemonSet so HTTP / gRPC / SQL spans and
+> RED metrics are captured from the kernel without any app, image, or SDK
+> change. The README covers two layouts (additive on top of stage 03, or
+> replacing the SDK injection entirely) and how to coexist with the
+> Cilium dataplane and the stage-04 Pyroscope agent on the same nodes.
+
 ## Architecture
 
 ```

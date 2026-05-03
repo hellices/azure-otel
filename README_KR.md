@@ -64,6 +64,13 @@ profiles 시그널은 2026-05 기준 Development 단계.
 > 를 추가해 Collector(Alloy `faro.receiver`) 로 보낼 수 있습니다. Faro 트레이서가
 > OTel Web 기반이라 `traceparent` 가 백엔드 span 과 그대로 이어집니다.
 
+> **(선택) 5단계 — OTel OBI 로 eBPF 자동 계측** — [`05_ebpf_with_obi/`](./05_ebpf_with_obi)
+> 참고. OpenTelemetry OBI (구 Grafana Beyla) 를 DaemonSet 으로 띄워
+> 앱 코드/이미지/SDK 주입 변경 없이 HTTP·gRPC·SQL span 과 RED 메트릭을
+> 커널에서 뽑아냅니다. 03 위에 얹는 방식과 SDK 주입을 대체하는 방식
+> 두 가지, 그리고 Cilium 데이터플레인 · 04 Pyroscope agent 와
+> 같은 노드에서 공존시키는 방법이 README 에 정리되어 있습니다.
+
 ## 전체 아키텍처
 
 ```
