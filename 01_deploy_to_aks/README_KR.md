@@ -5,6 +5,8 @@
 AKS + 모니터링 스택(AMW, Grafana, App Insights, Log Analytics)을 프로비저닝하고
 [`azure-otel/`](./azure-otel) Helm 차트를 배포합니다.
 
+![아키텍처](../docs/diagrams/deploy-to-aks-architecture.png)
+
 ## Prerequisites
 
 ```powershell

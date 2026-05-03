@@ -9,6 +9,8 @@ the collector splits the signal:
 
 > Korean version: [README_KR.md](./README_KR.md)
 
+![Collector flow](../docs/diagrams/otel-collector-flow.png)
+
 ```
 app pod ─OTLP─► otel-collector ─┬─► AppI (private via AMPLS)
                                 └─► :8889/metrics ◄─ ama-metrics ─► AMW ─► Grafana

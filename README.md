@@ -30,6 +30,8 @@ A deliberately polyglot 3-tier app is used to validate the pattern across SDKs.
 Call flow: `browser → nodejs → python → spring`. All services are built as
 containers compatible with OpenTelemetry auto-instrumentation.
 
+![base_apps architecture](./docs/diagrams/base-apps-architecture.png)
+
 ## Stages
 
 ### [`01_deploy_to_aks/`](./01_deploy_to_aks)

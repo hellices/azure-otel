@@ -8,6 +8,8 @@ untouched.
 
 > Korean version: [README_KR.md](./README_KR.md)
 
+![Pyroscope flow](../docs/diagrams/pyroscope-java-flow.png)
+
 OpenTelemetry's profiling signal is still **Development** as of 2026-05
 (OTLP `profiles` data model exists, SDK + spec are not GA). Pyroscope's
 own SDK is the practical interim path. Among the three sample languages,

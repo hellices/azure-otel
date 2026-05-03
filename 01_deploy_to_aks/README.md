@@ -6,6 +6,8 @@ Analytics, **AMPLS + Private Endpoint + 5 Private DNS Zones**) and deploys the
 
 > Korean version: [README_KR.md](./README_KR.md)
 
+![Architecture](../docs/diagrams/deploy-to-aks-architecture.png)
+
 ## Prerequisites
 
 ```powershell

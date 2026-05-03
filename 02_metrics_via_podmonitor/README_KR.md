@@ -8,6 +8,8 @@
 **Azure Monitor Workspace(AMW)** 에 쌓인 메트릭을 **Managed Grafana**의 3개
 서비스(Node.js / Python / Spring) 대시보드로 시각화합니다.
 
+![메트릭 플로우](../docs/diagrams/metrics-via-podmonitor-flow.png)
+
 ```
 [App pod]                                  ┌──► (App Insights — step 03)
  ├─ init: otel-auto-instrumentation        │

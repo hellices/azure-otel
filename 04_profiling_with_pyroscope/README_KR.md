@@ -8,6 +8,8 @@
 
 > English version: [README.md](./README.md)
 
+![Pyroscope 플로우](../docs/diagrams/pyroscope-java-flow.png)
+
 OpenTelemetry profiling 시그널은 2026-05 기준 아직 **Development** 단계
 (OTLP `profiles` 데이터 모델은 있지만 SDK + spec 안정화 미완). Pyroscope
 자체 SDK 가 현실적인 대안이고, 본 레포의 세 언어 중 **앱 수정 0 으로

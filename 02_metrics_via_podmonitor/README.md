@@ -8,6 +8,8 @@ three **Managed Grafana** dashboards (Node.js / Python / Spring).
 
 > Korean version: [README_KR.md](./README_KR.md)
 
+![Metrics flow](../docs/diagrams/metrics-via-podmonitor-flow.png)
+
 ```
 [App pod]                                  ┌──► (App Insights — step 03)
  ├─ init: otel-auto-instrumentation        │

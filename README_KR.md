@@ -30,6 +30,8 @@ AKS 위에서 동작하는 multi-language 애플리케이션을 **Azure Monitor 
 호출 흐름: `브라우저 → nodejs → python → spring`. 모든 서비스는
 OpenTelemetry auto-instrumentation 호환 컨테이너로 빌드됩니다.
 
+![base_apps 아키텍처](./docs/diagrams/base-apps-architecture.png)
+
 ## 단계별 가이드
 
 ### [`01_deploy_to_aks/`](./01_deploy_to_aks)

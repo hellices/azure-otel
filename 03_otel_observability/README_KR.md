@@ -8,6 +8,8 @@
 - **traces** → `azuremonitor` exporter → Application Insights (AMPLS 경유)
 - **metrics** → `prometheus` exporter `:8889` → ama-metrics 스크레이프 → AMW
 
+![Collector 플로우](../docs/diagrams/otel-collector-flow.png)
+
 ```
 app pod ─OTLP─► otel-collector ─┬─► AppI (private via AMPLS)
                                 └─► :8889/metrics ◄─ ama-metrics ─► AMW ─► Grafana
