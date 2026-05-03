@@ -167,7 +167,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "sum(rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
                                            "editorMode":  "code",
                                            "range":  true,
                                            "instant":  false,
@@ -227,7 +227,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "(sum(rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])), 1e-9)",
+                                           "expr":  "(sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])), 1e-9)",
                                            "editorMode":  "code",
                                            "range":  true,
                                            "instant":  false,
@@ -297,7 +297,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "editorMode":  "code",
                                            "range":  true,
                                            "instant":  false,
@@ -365,7 +365,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "editorMode":  "code",
                                            "range":  true,
                                            "instant":  false,
@@ -448,7 +448,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "sum by (http_method, http_status_code) (rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "expr":  "sum by (http_method, http_status_code) (rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
                                            "legendFormat":  "{{http_method}} {{http_status_code}}",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -507,7 +507,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "sum(rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"4..\"}[5m]))",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"4..\"}[5m]))",
                                            "legendFormat":  "4xx",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -519,7 +519,7 @@
                                        },
                                        {
                                            "refId":  "B",
-                                           "expr":  "sum(rate(http_server_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m]))",
+                                           "expr":  "sum(rate(http_server_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\", http_status_code=~\"5..\"}[5m]))",
                                            "legendFormat":  "5xx",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -621,7 +621,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "histogram_quantile(0.50, sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.50, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "legendFormat":  "p50",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -633,7 +633,7 @@
                                        },
                                        {
                                            "refId":  "B",
-                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "legendFormat":  "p95",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -645,7 +645,7 @@
                                        },
                                        {
                                            "refId":  "C",
-                                           "expr":  "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "legendFormat":  "p99",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -700,7 +700,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "sum by (le) (rate(http_server_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "expr":  "sum by (le) (rate(http_server_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
                                            "format":  "heatmap",
                                            "legendFormat":  "{{le}}",
                                            "editorMode":  "code",
@@ -766,7 +766,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "sum by (net_peer_name, http_status_code) (rate(http_client_duration_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
+                                           "expr":  "sum by (net_peer_name, http_status_code) (rate(http_client_duration_milliseconds_count{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m]))",
                                            "legendFormat":  "{{net_peer_name}} {{http_status_code}}",
                                            "editorMode":  "code",
                                            "range":  true,
@@ -821,7 +821,7 @@
                        "targets":  [
                                        {
                                            "refId":  "A",
-                                           "expr":  "histogram_quantile(0.95, sum by (le, net_peer_name) (rate(http_client_duration_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
+                                           "expr":  "histogram_quantile(0.95, sum by (le, net_peer_name) (rate(http_client_duration_milliseconds_bucket{k8s_namespace=\"$namespace\", service=\"nodejs\", k8s_pod=~\"$pod\"}[5m])))",
                                            "legendFormat":  "{{net_peer_name}}",
                                            "editorMode":  "code",
                                            "range":  true,

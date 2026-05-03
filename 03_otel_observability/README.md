@@ -1,7 +1,7 @@
 # 03 — OTLP Collector → App Insights (traces) + AMA scrape (metrics)
 
 Once stages 01 and 02 are done, replace the SDK's direct `:9464/metrics`
-exposure with an in-cluster **OTel Collector**. SDKs only speak OTLP/gRPC and
+exposure with an in-cluster **OTel Collector**. SDKs only speak OTLP and
 the collector splits the signal:
 
 - **traces** → `azuremonitor` exporter → Application Insights (via AMPLS)
@@ -10,9 +10,27 @@ the collector splits the signal:
 > Korean version: [README_KR.md](./README_KR.md)
 
 ```
-app pod ─OTLP/gRPC─► otel-collector ─┬─► AppI (private via AMPLS)
-                                     └─► :8889/metrics ◄─ ama-metrics ─► AMW ─► Grafana
+app pod ─OTLP─► otel-collector ─┬─► AppI (private via AMPLS)
+                                └─► :8889/metrics ◄─ ama-metrics ─► AMW ─► Grafana
 ```
+
+Protocol per language (set in `instrumentation.yaml`):
+
+| Language | OTLP protocol | Collector port |
+|---|---|---|
+| Java   | gRPC          | 4317 |
+| Node   | gRPC          | 4317 |
+| Python | HTTP/protobuf | 4318 |
+
+Why Python uses HTTP: the upstream `autoinstrumentation-python` image only
+bundles `opentelemetry-exporter-otlp-proto-http` (the gRPC exporter is
+omitted to avoid the heavy native `grpcio` wheel). Forcing `grpc` causes
+`Requested component 'otlp_proto_grpc' not found` at startup.
+
+The traces pipeline runs `filter/drop_healthchecks` before `batch` to drop
+spans for `/health`, `/healthz`, `/livez`, `/readyz` so probe traffic does
+not pollute Application Insights. Health-check **metrics** are still
+emitted (kept for Grafana availability panels).
 
 AMPLS / Private Endpoint / Private DNS Zones are already provisioned by the
 step 01 Bicep, so there is no extra infra work here.
@@ -73,3 +91,5 @@ flowing. The stage 02 Grafana dashboards keep working unchanged.
 | AppI Live Metrics is OK but Transactions are empty | Connection String Secret didn't take — recreate the Secret and restart the collector. |
 | Grafana shows 0 metrics | ama-metrics didn't pick up the new PodMonitor. `kubectl -n kube-system rollout restart deploy/ama-metrics` |
 | Metric labels (`service`, `k8s_pod`) missing | OTel SDK version differences. Inspect raw output at `:8889/metrics` and adjust the `transform/prom_labels` mappings. |
+| Python pod logs `Requested component 'otlp_proto_grpc' not found` | The Python auto-instrument image has no gRPC exporter. Keep `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and the `:4318` endpoint in the Python block of `instrumentation.yaml`. |
+| Health-check spans still appear in App Insights | App uses a non-standard probe path. Add it to the regex in the `filter/drop_healthchecks` processor in `collector.yaml`. |

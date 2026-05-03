@@ -11,8 +11,11 @@ metadata:
   name: azure-otel
   namespace: azure-otel
 spec:
+  # Default OTLP/gRPC endpoint for Java + Node (their auto-instrument images
+  # ship with the gRPC exporter). Python is overridden below to OTLP/HTTP
+  # because the upstream `autoinstrumentation-python` image does NOT bundle
+  # `opentelemetry-exporter-otlp-proto-grpc` — only `-proto-http` is present.
   exporter:
-    # Cluster-internal Collector. Stays inside the VNet — no Internet egress.
     endpoint: "http://otel-collector.azure-otel.svc.cluster.local:4317"
   propagators:
     - tracecontext
@@ -46,9 +49,14 @@ spec:
 
   python:
     image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:latest
+    # Override gRPC → HTTP/protobuf: the upstream Python auto-instrumentation
+    # image only ships `opentelemetry-exporter-otlp-proto-http`, so requesting
+    # gRPC fails with "Requested component 'otlp_proto_grpc' not found".
     env:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "http://otel-collector.azure-otel.svc.cluster.local:4318"
       - name: OTEL_EXPORTER_OTLP_PROTOCOL
-        value: "grpc"
+        value: "http/protobuf"
       - name: OTEL_TRACES_EXPORTER
         value: "otlp"
       - name: OTEL_METRICS_EXPORTER

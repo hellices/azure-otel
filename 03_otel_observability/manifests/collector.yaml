@@ -1,13 +1,3 @@
-# OpenTelemetry Collector — receives OTLP from app SDKs and:
-#   - Sends traces to Application Insights (azuremonitor exporter)
-#   - Re-exposes metrics on :8889/metrics so AKS managed Prometheus
-#     (ama-metrics) can scrape them via the PodMonitor below.
-#
-# No AAD / Workload Identity / DCE remote-write needed: ama-metrics already
-# has its own DCR association in step 01 and ingests directly into AMW.
-# Traces stay private as long as App Insights is reachable through the AMPLS
-# private endpoint configured in the README.
----
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
@@ -18,15 +8,13 @@ spec:
   replicas: 2
   envFrom:
     - secretRef:
-        name: otel-collector-secrets   # APPLICATIONINSIGHTS_CONNECTION_STRING
+        name: otel-collector-secrets
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 1000m, memory: 1Gi }
-  # Labels copied to pods so the PodMonitor can select them.
-  podLabels:
-    app.kubernetes.io/name: otel-collector
-    app.kubernetes.io/part-of: azure-otel
-  # Named ports so the PodMonitor can reference `prom` directly.
+  # Expose the prometheus-exporter port so the PodMonitor below can scrape it.
+  # The operator already exposes OTLP ports (4317/4318) and the collector's
+  # internal telemetry port (8888) automatically.
   ports:
     - name: prom
       port: 8889
@@ -34,7 +22,6 @@ spec:
   config:
     extensions:
       health_check: {}
-
     receivers:
       otlp:
         protocols:
@@ -42,7 +29,6 @@ spec:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
-
     processors:
       memory_limiter:
         check_interval: 2s
@@ -51,7 +37,6 @@ spec:
       batch:
         send_batch_size: 8192
         timeout: 5s
-      # Surface k8s metadata (pod, node, namespace) on every signal.
       k8sattributes:
         auth_type: serviceAccount
         passthrough: false
@@ -70,47 +55,63 @@ spec:
               - from: connection
       # Map OTel resource attributes → Prometheus labels expected by the
       # step-02 dashboards (`service`, `k8s_namespace`, `k8s_pod`).
+      # Note: OTel Operator auto-injects OTEL_SERVICE_NAME = deployment name
+      # (e.g. `azure-otel-python`), but the dashboards filter by the short
+      # form (`python`/`spring`/`nodejs`). Strip the `azure-otel-` prefix
+      # when building the `service` label so existing dashboards keep working.
       transform/prom_labels:
         metric_statements:
           - context: resource
             statements:
               - set(attributes["service"], attributes["service.name"]) where attributes["service.name"] != nil
+              - replace_pattern(attributes["service"], "^azure-otel-", "") where attributes["service"] != nil
               - set(attributes["k8s_namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
               - set(attributes["k8s_pod"], attributes["k8s.pod.name"]) where attributes["k8s.pod.name"] != nil
-
+      # Drop health-check / probe spans before they reach App Insights.
+      # Matches both server-side requests and outbound HTTP client calls
+      # against /health, /healthz, /livez, /readyz (any case, with optional
+      # query string). Span.kind filter avoids accidentally dropping unrelated
+      # internal spans whose names happen to contain those words.
+      filter/drop_healthchecks:
+        error_mode: ignore
+        traces:
+          span:
+            - 'IsMatch(name, "(?i)^(GET |HEAD |)/?(health|healthz|livez|readyz)/?$")'
+            - 'IsMatch(attributes["http.route"], "(?i)^/?(health|healthz|livez|readyz)/?$")'
+            - 'IsMatch(attributes["http.target"], "(?i)^/?(health|healthz|livez|readyz)(\\?.*)?$")'
+            - 'IsMatch(attributes["url.path"], "(?i)^/?(health|healthz|livez|readyz)$")'
     exporters:
-      # Traces → Application Insights (private via AMPLS when DNS is in place).
       azuremonitor:
         connection_string: ${env:APPLICATIONINSIGHTS_CONNECTION_STRING}
         maxbatchsize: 1024
         maxbatchinterval: 10s
-
-      # Metrics → re-exposed on :8889/metrics for ama-metrics to scrape.
       prometheus:
         endpoint: 0.0.0.0:8889
         send_timestamps: true
         metric_expiration: 5m
         resource_to_telemetry_conversion:
           enabled: true
-        # Keep metric names identical to step 02 so dashboards work unchanged.
-        add_metric_suffixes: false
-
+        # Append the OTLP unit as a suffix (e.g. `..._seconds`, `..._bytes`).
+        # Step-02 dashboards depend on the unit-suffixed names that SDKs
+        # produced when they exposed Prometheus directly:
+        #   spring  -> http_server_request_duration_seconds_count
+        #   python  -> http_server_duration_milliseconds_count
+        #   nodejs  -> http_server_duration_count   (no unit on the OTLP metric)
+        add_metric_suffixes: true
     service:
       extensions: [health_check]
       pipelines:
         traces:
+          # filter runs before batch so dropped spans never count against
+          # batch size and never hit the azuremonitor exporter.
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, batch]
+          processors: [memory_limiter, k8sattributes, filter/drop_healthchecks, batch]
           exporters: [azuremonitor]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, transform/prom_labels, batch]
           exporters: [prometheus]
-      telemetry:
-        metrics:
-          address: 0.0.0.0:8888
 ---
-# k8sattributes processor needs read access to pods/namespaces.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -135,12 +136,10 @@ roleRef:
   kind: ClusterRole
   name: otel-collector-k8sattributes
 subjects:
-  # OTel Operator creates this SA automatically as `<otelcol-name>-collector`.
   - kind: ServiceAccount
     name: otel-collector
     namespace: azure-otel
 ---
-# AKS managed Prometheus scrapes :8889/metrics on the collector pods.
 apiVersion: azmonitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
