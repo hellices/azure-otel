@@ -81,6 +81,43 @@ requests | where timestamp > ago(15m)
 `cloud_RoleName` 으로 `spring`, `python`, `nodejs` 가 보이면 OK. Grafana에서는
 02단계 대시보드가 그대로 동작합니다.
 
+## 3. Trace 보는 곳
+
+같은 trace 데이터를 두 UI 에서 볼 수 있습니다.
+
+### Application Insights (Azure Portal)
+
+- **Investigate → Transaction search** — 요청 하나 클릭 → end-to-end
+  transaction (nodejs / python / spring 을 가로지르는 Gantt 폭포수)
+- **Investigate → Application map** — 서비스 토폴로지. 각 edge에
+  call rate / error rate / latency 표시
+- **Monitoring → Logs** — `requests` / `dependencies` / `traces` /
+  `exceptions` 에 KQL. 같은 `operation_Id` 로 서비스 간 span이 묶임
+
+### Azure Managed Grafana (Tempo 스타일)
+
+기본 내장 **Azure Monitor** 데이터소스가 Application Insights
+**Traces** 모드를 지원해 Grafana trace viewer를 그대로 쓸 수 있습니다.
+
+1. Grafana managed identity 에 App Insights 에 대한 `Monitoring Reader`
+   권한 부여 (1회성):
+   ```powershell
+   $rg   = azd env get-value AZURE_RESOURCE_GROUP
+   $ai   = azd env get-value APPLICATION_INSIGHTS_NAME
+   $gfn  = (az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
+   $gid  = az grafana show -n $gfn -g $rg --query identity.principalId -o tsv
+   $aiid = az monitor app-insights component show -g $rg -a $ai --query id -o tsv
+   az role assignment create --assignee-object-id $gid --assignee-principal-type ServicePrincipal `
+     --role "Monitoring Reader" --scope $aiid
+   ```
+2. Grafana → **Explore** → datasource **Azure Monitor** → Service
+   **Application Insights** → Query type **Traces** → App Insights 리소스
+   선택 → `Trace ID` (= `operation_Id`) 붙여넣기 → trace 시각이 들어가게
+   시간 범위 넓힌 후 **Run query**.
+3. 02단계 대시보드에는 **Recent traces (App Insights)** 테이블 패널이
+   추가되어 있어, `operation_Id` 셀을 클릭하면 trace viewer 로 바로
+   점프합니다.
+
 ## 트러블슈팅
 
 | 증상 | 원인 / 해결 |

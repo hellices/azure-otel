@@ -1,0 +1,26 @@
+# Helm values for grafana/pyroscope (single-binary mode).
+# Install:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm upgrade --install pyroscope grafana/pyroscope \
+#     -n azure-otel -f 04_profiling_with_pyroscope/manifests/pyroscope-values.yaml
+#
+# Single binary is enough for a 3-service demo. For >100 series/host or
+# multi-tenant setups, switch to `pyroscope.deploymentMode: microservices`.
+pyroscope:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    # "" -> default StorageClass (managed-csi on AKS), same as the SQLite PVC.
+    storageClassName: ""
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: "2",  memory: 2Gi }
+  service:
+    port: 4040
+  # Default retention is 31d; demo workload is tiny so keep the default.
+
+# Disable the bundled Alloy — installed separately as a DaemonSet below so
+# its lifecycle and config are easier to reason about.
+alloy:
+  enabled: false

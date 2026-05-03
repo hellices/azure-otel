@@ -1,0 +1,32 @@
+# Optional: expose the Pyroscope UI/HTTP API through the existing AGFC Gateway
+# so an external Grafana (e.g. Azure Managed Grafana) can query it as a
+# datasource.
+#
+# Pyroscope does not natively prefix-rewrite, so we route a dedicated
+# subpath at the gateway and rewrite "/pyroscope/..." -> "/..." towards the
+# service. Combine with auth (AGFC custom policy / OAuth proxy / mTLS) in
+# anything beyond a demo — Pyroscope itself has no built-in auth.
+#
+# Apply only after step 01 has created the `azure-otel-gw` Gateway.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: pyroscope
+  namespace: azure-otel
+spec:
+  parentRefs:
+    - name: azure-otel-gw
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /pyroscope
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: pyroscope
+          port: 4040

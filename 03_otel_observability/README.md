@@ -82,6 +82,42 @@ requests | where timestamp > ago(15m)
 Seeing `cloud_RoleName` of `spring`, `python`, and `nodejs` means traces are
 flowing. The stage 02 Grafana dashboards keep working unchanged.
 
+## 3. View traces
+
+The same trace data is reachable from two UIs:
+
+### Application Insights (Azure portal)
+
+- **Investigate → Transaction search** — click any request to open the
+  end-to-end transaction (Gantt waterfall across nodejs / python / spring).
+- **Investigate → Application map** — service topology with call rate, error
+  rate, and latency on each edge.
+- **Monitoring → Logs** — KQL over `requests` / `dependencies` / `traces`
+  / `exceptions`. Same `operation_Id` ties spans together across services.
+
+### Azure Managed Grafana (Tempo-style)
+
+The built-in **Azure Monitor** datasource has an Application Insights
+**Traces** mode that reuses Grafana's trace viewer.
+
+1. Grant the Grafana managed identity `Monitoring Reader` on the App
+   Insights resource (one-time):
+   ```powershell
+   $rg   = azd env get-value AZURE_RESOURCE_GROUP
+   $ai   = azd env get-value APPLICATION_INSIGHTS_NAME
+   $gfn  = (az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
+   $gid  = az grafana show -n $gfn -g $rg --query identity.principalId -o tsv
+   $aiid = az monitor app-insights component show -g $rg -a $ai --query id -o tsv
+   az role assignment create --assignee-object-id $gid --assignee-principal-type ServicePrincipal `
+     --role "Monitoring Reader" --scope $aiid
+   ```
+2. Grafana → **Explore** → datasource **Azure Monitor** → Service
+   **Application Insights** → Query type **Traces** → pick the App Insights
+   resource → paste a `Trace ID` (= `operation_Id`) → widen the time range
+   to cover the trace timestamp → **Run query**.
+3. The stage-02 dashboards include a **Recent traces (App Insights)** table
+   panel; click a row's `operation_Id` to jump straight to the trace viewer.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

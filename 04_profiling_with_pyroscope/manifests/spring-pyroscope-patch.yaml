@@ -1,0 +1,87 @@
+# Strategic-merge patch that adds the Pyroscope Java agent to the Spring Boot
+# Deployment WITHOUT modifying the application image or the step-01 Helm chart.
+#
+# Apply with:
+#   kubectl -n azure-otel patch deploy azure-otel-spring \
+#     --patch-file 04_profiling_with_pyroscope/manifests/spring-pyroscope-patch.yaml
+#   kubectl -n azure-otel rollout status deploy/azure-otel-spring
+#
+# How it works
+# ------------
+# 1. An emptyDir volume `pyroscope-agent` is mounted at /pyroscope.
+# 2. An initContainer downloads the official Pyroscope Java agent JAR into it.
+# 3. JAVA_TOOL_OPTIONS adds `-javaagent:/pyroscope/pyroscope.jar`. Multiple
+#    `-javaagent` entries are allowed by the JVM and the OTel Operator's
+#    mutating webhook PRESERVES this env var (it appends its own javaagent
+#    when injecting the Java auto-instrumentation), so the result at runtime
+#    is BOTH agents loaded:
+#      -javaagent:/pyroscope/pyroscope.jar
+#      -javaagent:/otel-auto-instrumentation-java/javaagent.jar
+# 4. PYROSCOPE_* env vars point the agent at the in-cluster Pyroscope.
+#
+# `PYROSCOPE_LABELS` mirrors the metric / trace labels used in step 02/03 so
+# the same `service` value (`spring`) joins all three signals.
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: pyroscope-agent-download
+          # Tiny image with curl + ca-certs. ~5 MB.
+          image: curlimages/curl:8.10.1
+          # Pin a known-good Pyroscope Java agent version. Bump occasionally;
+          # `latest` is intentionally avoided so pod restarts are reproducible.
+          env:
+            - name: PYROSCOPE_AGENT_VERSION
+              value: "0.16.0"
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              url="https://github.com/grafana/pyroscope-java/releases/download/v${PYROSCOPE_AGENT_VERSION}/pyroscope.jar"
+              echo "Downloading $url"
+              curl -fsSL --retry 5 --retry-delay 2 -o /pyroscope/pyroscope.jar "$url"
+              ls -l /pyroscope/pyroscope.jar
+          volumeMounts:
+            - name: pyroscope-agent
+              mountPath: /pyroscope
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+      containers:
+        - name: spring
+          env:
+            # The OTel Operator webhook reads JAVA_TOOL_OPTIONS, appends its
+            # own `-javaagent:.../javaagent.jar`, and writes it back.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/pyroscope/pyroscope.jar"
+            - name: PYROSCOPE_APPLICATION_NAME
+              # Short form so it matches the `service` label produced by the
+              # step-03 collector's transform/prom_labels processor.
+              value: "spring"
+            - name: PYROSCOPE_SERVER_ADDRESS
+              value: "http://pyroscope.azure-otel.svc.cluster.local:4040"
+            - name: PYROSCOPE_FORMAT
+              value: "jfr"            # JFR unlocks alloc + lock profiles
+            - name: PYROSCOPE_PROFILER_EVENT
+              value: "itimer"          # CPU sampler that works in containers
+            - name: PYROSCOPE_PROFILER_ALLOC
+              value: "512k"            # alloc profile sample interval
+            - name: PYROSCOPE_PROFILER_LOCK
+              value: "10ms"            # contended-lock profile threshold
+            - name: PYROSCOPE_UPLOAD_INTERVAL
+              value: "15s"
+            - name: PYROSCOPE_LABELS
+              # Static labels attached to every profile push.
+              value: "namespace=azure-otel,cluster=azure-otel-aks"
+          volumeMounts:
+            - name: pyroscope-agent
+              mountPath: /pyroscope
+              readOnly: true
+      volumes:
+        - name: pyroscope-agent
+          emptyDir:
+            sizeLimit: 32Mi

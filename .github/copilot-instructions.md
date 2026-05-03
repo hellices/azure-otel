@@ -6,6 +6,8 @@ This repo demonstrates running observability for apps on **AKS** with **Azure Ma
 
 - `01_deploy_to_aks/` — Bicep + Helm chart that provisions AKS, AGFC ingress, AMW/AMG, and deploys the sample apps.
 - `02_metrics_via_podmonitor/` — `PodMonitor`, AMA scrape config, OTel `Instrumentation` CR, and Grafana dashboard JSON for the sample apps.
+- `03_otel_observability/` — OTel Collector + Instrumentation CR; SDKs use OTLP only, collector splits traces → App Insights and metrics → ama-metrics.
+- `04_profiling_with_pyroscope/` — Grafana Pyroscope + Java agent injected as an extra `-javaagent` into the Spring pod via a strategic-merge patch; no app code or image change.
 - `base_apps/` — sample apps in Node.js (Next.js), Python (FastAPI), and Java (Spring Boot) that expose `/metrics` and accept OTel auto-instrumentation.
 - `docs/diagrams/` — Excalidraw architecture diagrams.
 

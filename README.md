@@ -4,13 +4,16 @@ A reference repo for **monitoring AKS-hosted applications with Azure Monitor +
 OpenTelemetry**. The goal is to experiment with and codify a standard pattern
 for end-to-end observability on Azure.
 
-The work is split into three numbered stages, each building on the previous one:
+The work is split into four numbered stages, each building on the previous one:
 
 1. **Provision AKS + monitoring infra** (Bicep + azd)
 2. **Metrics first** — SDK Prometheus exporter + AKS managed Prometheus + Grafana
 3. **Standardize on OTLP** — OpenTelemetry Collector sending traces to
    Application Insights and metrics to AMW (scraped by ama-metrics), with all
    ingest paths going through AMPLS Private Endpoints.
+4. **Continuous profiling (Java)** — Grafana Pyroscope + Pyroscope Java
+   agent injected as a sidecar `-javaagent` into the Spring pod, no app
+   change.
 
 A Korean version of every README is kept alongside as `README_KR.md`.
 
@@ -49,6 +52,22 @@ signal:
 Stage 02 dashboards keep working — the collector's `transform` processor maps
 OTel resource attributes back to the Prometheus labels the dashboards expect.
 
+### [`04_profiling_with_pyroscope/`](./04_profiling_with_pyroscope)
+Adds the third OTel signal — **profiling** — for the Spring service only.
+A strategic-merge patch on the Spring Deployment adds an initContainer that
+downloads the official Pyroscope Java agent and an extra `-javaagent`
+entry, so the JVM loads OTel + Pyroscope side-by-side. Same `service`
+label as step-02/03 dashboards. Python and Node need a process bootstrap
+that would touch app code, so they are intentionally out of scope here.
+OTel's native profiles signal is still in Development as of 2026-05.
+
+> **(Optional) Browser RUM** — OTel auto-instrumentation only covers the server
+> side. To capture page loads / Web Vitals / client-side fetch / JS errors as
+> well, plug in the
+> [Grafana Faro Web SDK](https://grafana.com/docs/grafana-cloud/monitor-applications/frontend-observability/)
+> and ship to the collector (Alloy `faro.receiver`). Faro's tracer is built on
+> OTel Web, so `traceparent` flows through to the backend spans end-to-end.
+
 ## Architecture
 
 ```
@@ -80,6 +99,9 @@ kubectl apply -f ..\02_metrics_via_podmonitor\manifests\
 # 3. Switch to OTLP via the Collector
 cd ..\
 # Tear down stage 02 outputs and follow 03_otel_observability/README.md
+
+# 4. Continuous profiling (Pyroscope + Alloy eBPF)
+# Follow 04_profiling_with_pyroscope/README.md
 ```
 
 Each stage README has the exact commands and verification steps.
@@ -87,5 +109,5 @@ Each stage README has the exact commands and verification steps.
 ## Tech used
 
 - **Compute / network**: AKS (Azure CNI overlay + Cilium), AGFC (Gateway API), VNet, Private Endpoint
-- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS
+- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS, Grafana Pyroscope (Java agent)
 - **Build / deploy**: Bicep, Azure Developer CLI (azd), Helm, GitHub Container Registry
