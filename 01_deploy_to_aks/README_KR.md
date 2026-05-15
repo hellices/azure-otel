@@ -82,9 +82,12 @@ $addr = kubectl -n azure-otel get gateway azure-otel-gw `
 "http://$addr"
 Start-Process "http://$addr"
 ```
-
 `Gateway` / `HTTPRoute`는 Helm 차트가 만들고 AGFC 컨트롤러가 Application Gateway
 for Containers의 frontend 주소를 `.status.addresses[0].value`에 채워 넣습니다.
+
+
+agfc frontend 주소로 접근하면 다음과 같은 ui를 확인할 수 있습니다.
+![접속 화면](../docs/images/01_service_ui.png)
 
 ### 5. Grafana 열기
 

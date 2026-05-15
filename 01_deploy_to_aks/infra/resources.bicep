@@ -339,6 +339,13 @@ resource dcra 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
   }
 }
 
+// NOTE: ALB controller (Microsoft.AlbController extension) is enabled by the
+// postprovision hook via `az aks update --enable-application-load-balancer`.
+// As of 2026-05 the extension is not yet GA in every region (e.g. koreacentral
+// returns `ExtensionTypeRegistrationGetFailed`), so installing it directly
+// from Bicep would fail. The AKS-level CLI flag handles region availability
+// internally.
+
 // ---------- Role assignments ----------
 // Grafana service identity needs to read metrics from the AMW.
 var monitoringDataReaderRoleId = 'b0d8363b-8ddd-447d-831f-62ca05bff136' // Monitoring Data Reader
@@ -432,13 +439,29 @@ resource amplsLawLink 'microsoft.insights/privateLinkScopes/scopedResources@2021
   }
 }
 
-// AMPLS uses 5 private DNS zones. We create them and link them to the VNet.
+// AMW Prometheus ingest goes through the DCE; the DCE itself is what gets
+// scoped into AMPLS (AMW accounts cannot be linked directly). Without this,
+// ama-metrics receives 403 InvalidAccess "Data collection endpoint must be
+// used to access configuration over private link" from AMCS.
+resource amplsDceLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = {
+  parent: ampls
+  name: 'dce-link'
+  properties: {
+    linkedResourceId: dce.id
+  }
+}
+
+// AMPLS DNS zones. Region-scoped zones (handler.control / ingest) are
+// required for AMW Prometheus to resolve through the private endpoint.
+// PE DNS zone groups are capped at 6 entries, so blob is dropped (AMPLS does
+// not need it for our setup).
 var amplsZones = [
   'privatelink.monitor.azure.com'
   'privatelink.oms.opinsights.azure.com'
   'privatelink.ods.opinsights.azure.com'
   'privatelink.agentsvc.azure-automation.net'
-  'privatelink.blob.core.windows.net'
+  'privatelink.${location}.handler.control.monitor.azure.com'
+  'privatelink.${location}.ingest.monitor.azure.com'
 ]
 
 resource amplsPrivateDnsZones 'Microsoft.Network/privateDnsZones@2024-06-01' = [for z in amplsZones: {
@@ -478,6 +501,7 @@ resource amplsPe 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   dependsOn: [
     amplsAppInsightsLink
     amplsLawLink
+    amplsDceLink
   ]
 }
 

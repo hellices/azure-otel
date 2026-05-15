@@ -6,6 +6,9 @@ metadata:
 spec:
   mode: deployment
   replicas: 2
+  # Use the contrib distribution: core lacks the `transform` processor and
+  # `azuremonitor` exporter used below.
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.119.0
   envFrom:
     - secretRef:
         name: otel-collector-secrets

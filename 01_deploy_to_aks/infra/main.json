@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "11227036250784267644"
+      "templateHash": "1278379769775088655"
     }
   },
   "parameters": {
@@ -127,7 +127,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "17900133421939435345"
+              "templateHash": "8579604591154193575"
             }
           },
           "parameters": {
@@ -189,7 +189,15 @@
             "grafanaAdminRoleId": "22926164-76b3-42b3-bc55-97df8dab3e41",
             "aksClusterAdminRoleId": "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8",
             "aksClusterUserRoleId": "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
-            "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+            "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+            "amplsZones": [
+              "privatelink.monitor.azure.com",
+              "privatelink.oms.opinsights.azure.com",
+              "privatelink.ods.opinsights.azure.com",
+              "privatelink.agentsvc.azure-automation.net",
+              "[format('privatelink.{0}.handler.control.monitor.azure.com', parameters('location'))]",
+              "[format('privatelink.{0}.ingest.monitor.azure.com', parameters('location'))]"
+            ]
           },
           "resources": [
             {
@@ -609,6 +617,140 @@
               "dependsOn": [
                 "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
                 "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]"
+              ]
+            },
+            {
+              "type": "microsoft.insights/privateLinkScopes",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "accessModeSettings": {
+                  "ingestionAccessMode": "Open",
+                  "queryAccessMode": "Open"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'appi-link')]",
+              "properties": {
+                "linkedResourceId": "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'law-link')]",
+              "properties": {
+                "linkedResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'dce-link')]",
+              "properties": {
+                "linkedResourceId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]"
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "amplsPrivateDnsZones",
+                "count": "[length(variables('amplsZones'))]"
+              },
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2024-06-01",
+              "name": "[variables('amplsZones')[copyIndex()]]",
+              "location": "global",
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "copy": {
+                "name": "amplsPrivateDnsLinks",
+                "count": "[length(variables('amplsZones'))]"
+              },
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2024-06-01",
+              "name": "[format('{0}/{1}', variables('amplsZones')[copyIndex()], format('{0}-link', variables('amplsZones')[copyIndex()]))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('amplsZones')[copyIndex()])]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-05-01",
+              "name": "[format('pe-ampls-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "subnet": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aks-subnet')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "ampls",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('microsoft.insights/privateLinkScopes', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                      "groupIds": [
+                        "azuremonitor"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'appi-link')]",
+                "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'dce-link')]",
+                "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'law-link')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', format('pe-ampls-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort')), 'default')]",
+              "properties": {
+                "copy": [
+                  {
+                    "name": "privateDnsZoneConfigs",
+                    "count": "[length(variables('amplsZones'))]",
+                    "input": {
+                      "name": "[replace(variables('amplsZones')[copyIndex('privateDnsZoneConfigs')], '.', '-')]",
+                      "properties": {
+                        "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', variables('amplsZones')[copyIndex('privateDnsZoneConfigs')])]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-ampls-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort')))]",
+                "amplsPrivateDnsZones"
               ]
             }
           ],

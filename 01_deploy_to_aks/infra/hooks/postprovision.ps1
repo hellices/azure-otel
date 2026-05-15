@@ -4,7 +4,7 @@
     1. Enables the AKS Gateway API + Application Load Balancer add-on.
     2. Merges kubeconfig and waits for the ALB controller to be ready.
     3. Reads the pre-provisioned 'aks-appgateway' subnet ID from azd output.
-    4. Installs (or upgrades) the azure-otel Helm chart with Gateway/HTTPRoute.
+    4. Grants the ALB managed identity Network Contributor on that subnet.
 #>
 $ErrorActionPreference = 'Stop'
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -14,6 +14,9 @@ $rg        = azd env get-value AZURE_RESOURCE_GROUP
 $aksName   = azd env get-value AKS_NAME
 $subnetId  = azd env get-value AGFC_SUBNET_ID
 
+# Microsoft.AlbController extension is not GA in every region (e.g. koreacentral
+# returns ExtensionTypeRegistrationGetFailed when installed via ARM/Bicep).
+# The AKS CLI add-on handles region availability internally, so install it here.
 Write-Host "==> Enabling Gateway API + ALB add-on on '$aksName' (rg: $rg) ..."
 az aks update `
     --name $aksName `
@@ -87,6 +90,26 @@ if (-not $existingSubnetRole) {
     Write-Host "  Granted Network Contributor on AGFC subnet to '$albIdentityName'."
 } else {
     Write-Host "  Network Contributor already granted on AGFC subnet."
+}
+
+# Verify (RBAC propagation can lag a few seconds). Fail loudly if missing —
+# without this role the ALB controller hits LinkedAuthorizationFailed and the
+# Gateway never gets a public address.
+$verifyDeadline = (Get-Date).AddMinutes(2)
+do {
+    $verified = az role assignment list `
+        --assignee-object-id $albPrincipalId `
+        --scope $subnetId `
+        --role 'Network Contributor' `
+        --query '[0].id' -o tsv 2>$null
+    if (-not $verified) {
+        Write-Host "  Waiting 10 s for role assignment to propagate..."
+        Start-Sleep -Seconds 10
+    }
+} while (-not $verified -and (Get-Date) -lt $verifyDeadline)
+
+if (-not $verified) {
+    throw "ALB MSI '$albIdentityName' still lacks 'Network Contributor' on '$subnetId' after 2 min. Re-run 'azd provision' or assign the role manually."
 }
 
 Write-Host "  Using AGFC subnet: $subnetId"

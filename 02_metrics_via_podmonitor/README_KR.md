@@ -207,6 +207,8 @@ Remove-Item body.json
 
 `namespace` 변수와 `service=…` label은 PodMonitor의 relabeling이 채워줍니다.
 
+![grafana sample](../docs/images/02_grafana_dashboard.png)
+
 ## 트러블슈팅
 
 | 증상 | 원인 / 해결 |
