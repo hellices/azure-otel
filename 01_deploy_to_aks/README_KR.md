@@ -9,20 +9,19 @@ AKS + 모니터링 스택(AMW, Grafana, App Insights, Log Analytics)을 프로�
 
 ## Prerequisites
 
-```powershell
-winget install --id Microsoft.Azd        --silent --accept-source-agreements --accept-package-agreements
-winget install --id Microsoft.AzureCLI   --silent --accept-source-agreements --accept-package-agreements
-winget install --id Kubernetes.kubectl   --silent --accept-source-agreements --accept-package-agreements
-winget install --id Helm.Helm            --silent --accept-source-agreements --accept-package-agreements
-$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+```bash
+brew install azure/azd/azd azure-cli kubectl helm
 ```
 
 ## 실행 순서
 
+> 아래 모든 명령은 `01_deploy_to_aks/` 디렉토리에서 실행합니다
+> (`azure.yaml`이 있는 위치).
+
 ### 1. 로그인 & 환경 초기화
 
-```powershell
-cd c:\Users\inhwanhwang\vscode\azure-otel\01_deploy_to_aks
+```bash
+cd 01_deploy_to_aks    # 레포 루트에서
 
 az login
 azd auth login
@@ -33,7 +32,7 @@ azd env set AZURE_LOCATION koreacentral
 
 ### 2. 인프라 프로비저닝 (Bicep만)
 
-```powershell
+```bash
 azd up
 ```
 
@@ -43,21 +42,20 @@ Gateway API + ALB add-on 활성화 + AGFC subnet 권한 부여까지만 수행�
 
 ### 3. kubectl 연결
 
-```powershell
-$rg  = (azd env get-value AZURE_RESOURCE_GROUP)
-$aks = (azd env get-value AKS_NAME)
-az aks get-credentials --resource-group $rg --name $aks --overwrite-existing
+```bash
+rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+aks=$(azd env get-value AKS_NAME)
+az aks get-credentials --resource-group "$rg" --name "$aks" --overwrite-existing
 kubectl get nodes
 ```
 
 ### 4. Helm 차트 배포
 
-```powershell
-cd c:\Users\inhwanhwang\vscode\azure-otel
-$subnetId = (azd env get-value AGFC_SUBNET_ID)
-helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
-  --namespace azure-otel --create-namespace `
-  --set "gateway.subnetId=$subnetId" `
+```bash
+subnetId=$(azd env get-value AGFC_SUBNET_ID)
+helm upgrade --install azure-otel ./azure-otel \
+  --namespace azure-otel --create-namespace \
+  --set "gateway.subnetId=$subnetId" \
   --wait --timeout 10m
 
 kubectl -n azure-otel get pods,svc
@@ -67,20 +65,20 @@ kubectl -n azure-otel get pods,svc
 
 Helm 배포 후 Gateway가 public IP/FQDN을 받기까지 1–3분 정도 걸립니다.
 
-```powershell
+```bash
 # 한 번만 조회
-kubectl -n azure-otel get gateway azure-otel-gw `
+kubectl -n azure-otel get gateway azure-otel-gw \
   -o 'jsonpath={.status.addresses[0].value}'
 
 # 받을 때까지 대기 (kubectl 1.23+)
-kubectl -n azure-otel wait gateway/azure-otel-gw `
+kubectl -n azure-otel wait gateway/azure-otel-gw \
   --for=jsonpath='{.status.addresses[0].value}' --timeout=5m
 
 # 받은 주소를 변수에 저장 + 바로 열기
-$addr = kubectl -n azure-otel get gateway azure-otel-gw `
-          -o 'jsonpath={.status.addresses[0].value}'
-"http://$addr"
-Start-Process "http://$addr"
+addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
+  -o 'jsonpath={.status.addresses[0].value}')
+echo "http://$addr"
+open "http://$addr"    # macOS; Linux에서는 xdg-open
 ```
 `Gateway` / `HTTPRoute`는 Helm 차트가 만들고 AGFC 컨트롤러가 Application Gateway
 for Containers의 frontend 주소를 `.status.addresses[0].value`에 채워 넣습니다.
@@ -91,20 +89,15 @@ agfc frontend 주소로 접근하면 다음과 같은 ui를 확인할 수 있습
 
 ### 5. Grafana 열기
 
-```powershell
-$grafana = (azd env get-value GRAFANA_ENDPOINT)
-$grafana                                  # URL 확인
-Start-Process "msedge.exe" $grafana       # 또는 chrome.exe / iexplore.exe
-# 한 줄로:  Start-Process -FilePath $grafana    (기본 브라우저)
+```bash
+grafana=$(azd env get-value GRAFANA_ENDPOINT)
+echo "$grafana"
+open "$grafana"    # macOS; Linux에서는 xdg-open
 ```
-
-`Start-Process (azd env get-value GRAFANA_ENDPOINT)` 가 실패한다면 azd가 출력한
-경고가 함께 들어가 값이 배열이 됐거나 PS5의 URL 핸들러 동작 차이 때문입니다.
-위처럼 변수에 먼저 담거나 `-FilePath`를 명시하면 안정적입니다.
 
 ### 6. 정리
 
-```powershell
+```bash
 azd down --purge --force
 ```
 
@@ -203,8 +196,8 @@ Azure Monitor 간 모니터링 트래픽이 VNet 안에서만 흐르게 합니�
 
 ### azd 환경 값 확인
 
-```powershell
-azd env get-values | Select-String -Pattern '^(AKS_|GRAFANA_|APPLICATION_INSIGHTS_|AZURE_MONITOR_|LOG_ANALYTICS_|AZURE_RESOURCE_GROUP|VNET_|AGFC_|ACR_)'
+```bash
+azd env get-values | grep -E '^(AKS_|GRAFANA_|APPLICATION_INSIGHTS_|AZURE_MONITOR_|LOG_ANALYTICS_|AZURE_RESOURCE_GROUP|VNET_|AGFC_|ACR_)'
 ```
 
 ### Private cluster
@@ -222,19 +215,19 @@ https://github.com/users/hellices/packages/container/azure-otel/settings → Cha
 
 **B. Pull secret 사용**
 
-```powershell
-$ghcrUser  = 'hellices'
-$ghcrToken = '<PAT with read:packages>'
+```bash
+ghcrUser='hellices'
+ghcrToken='<PAT with read:packages>'
 kubectl create namespace azure-otel
-kubectl -n azure-otel create secret docker-registry ghcr `
-  --docker-server=ghcr.io --docker-username=$ghcrUser --docker-password=$ghcrToken
+kubectl -n azure-otel create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username="$ghcrUser" --docker-password="$ghcrToken"
 # Helm:  --set 'global.imagePullSecrets[0].name=ghcr'
 ```
 
 ### Ingress 없이 스모크 테스트
 
-```powershell
-helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
+```bash
+helm upgrade --install azure-otel ./azure-otel \
   --namespace azure-otel --set nodejs.pythonPublicBaseUrl=http://localhost:8000
 
 kubectl -n azure-otel port-forward svc/azure-otel-nodejs 3000:3000   # 터미널 A

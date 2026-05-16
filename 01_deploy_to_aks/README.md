@@ -10,20 +10,19 @@ Analytics, **AMPLS + Private Endpoint + 5 Private DNS Zones**) and deploys the
 
 ## Prerequisites
 
-```powershell
-winget install --id Microsoft.Azd        --silent --accept-source-agreements --accept-package-agreements
-winget install --id Microsoft.AzureCLI   --silent --accept-source-agreements --accept-package-agreements
-winget install --id Kubernetes.kubectl   --silent --accept-source-agreements --accept-package-agreements
-winget install --id Helm.Helm            --silent --accept-source-agreements --accept-package-agreements
-$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+```bash
+brew install azure/azd/azd azure-cli kubectl helm
 ```
 
 ## Steps
 
+> All commands below assume you are inside `01_deploy_to_aks/`
+> (where `azure.yaml` lives).
+
 ### 1. Login & init env
 
-```powershell
-cd c:\Users\inhwanhwang\vscode\azure-otel\01_deploy_to_aks
+```bash
+cd 01_deploy_to_aks    # from repo root
 
 az login
 azd auth login
@@ -34,7 +33,7 @@ azd env set AZURE_LOCATION koreacentral
 
 ### 2. Provision infra
 
-```powershell
+```bash
 azd up
 ```
 
@@ -44,21 +43,20 @@ permissions. **The Helm release is not part of this hook.**
 
 ### 3. Connect kubectl
 
-```powershell
-$rg  = (azd env get-value AZURE_RESOURCE_GROUP)
-$aks = (azd env get-value AKS_NAME)
-az aks get-credentials --resource-group $rg --name $aks --overwrite-existing
+```bash
+rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+aks=$(azd env get-value AKS_NAME)
+az aks get-credentials --resource-group "$rg" --name "$aks" --overwrite-existing
 kubectl get nodes
 ```
 
 ### 4. Deploy the Helm chart
 
-```powershell
-cd c:\Users\inhwanhwang\vscode\azure-otel
-$subnetId = (azd env get-value AGFC_SUBNET_ID)
-helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
-  --namespace azure-otel --create-namespace `
-  --set "gateway.subnetId=$subnetId" `
+```bash
+subnetId=$(azd env get-value AGFC_SUBNET_ID)
+helm upgrade --install azure-otel ./azure-otel \
+  --namespace azure-otel --create-namespace \
+  --set "gateway.subnetId=$subnetId" \
   --wait --timeout 10m
 
 kubectl -n azure-otel get pods,svc
@@ -69,20 +67,20 @@ kubectl -n azure-otel get pods,svc
 The Gateway typically gets its public IP/FQDN within 1–3 minutes after the
 chart is deployed.
 
-```powershell
+```bash
 # One-shot
-kubectl -n azure-otel get gateway azure-otel-gw `
+kubectl -n azure-otel get gateway azure-otel-gw \
   -o 'jsonpath={.status.addresses[0].value}'
 
 # Wait until ready (kubectl 1.23+)
-kubectl -n azure-otel wait gateway/azure-otel-gw `
+kubectl -n azure-otel wait gateway/azure-otel-gw \
   --for=jsonpath='{.status.addresses[0].value}' --timeout=5m
 
 # Capture and open
-$addr = kubectl -n azure-otel get gateway azure-otel-gw `
-          -o 'jsonpath={.status.addresses[0].value}'
-"http://$addr"
-Start-Process "http://$addr"
+addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
+  -o 'jsonpath={.status.addresses[0].value}')
+echo "http://$addr"
+open "http://$addr"    # macOS; use xdg-open on Linux
 ```
 
 The `Gateway` / `HTTPRoute` are created by the Helm chart; the AGFC controller
@@ -91,20 +89,15 @@ Containers frontend.
 
 ### 5. Open Grafana
 
-```powershell
-$grafana = (azd env get-value GRAFANA_ENDPOINT)
-$grafana                                  # check the URL
-Start-Process "msedge.exe" $grafana       # or chrome.exe / iexplore.exe
+```bash
+grafana=$(azd env get-value GRAFANA_ENDPOINT)
+echo "$grafana"
+open "$grafana"    # macOS; use xdg-open on Linux
 ```
-
-If `Start-Process (azd env get-value GRAFANA_ENDPOINT)` fails it usually means
-azd printed a warning that turned the value into an array, or PS5 URL handling
-quirks kicked in. Capturing into a variable first or using `-FilePath` is
-reliable.
 
 ### 6. Tear down
 
-```powershell
+```bash
 azd down --purge --force
 ```
 
@@ -204,8 +197,8 @@ the VNet. The diagram below shows every resource and how they connect:
 
 ### Inspecting azd env values
 
-```powershell
-azd env get-values | Select-String -Pattern '^(AKS_|GRAFANA_|APPLICATION_INSIGHTS_|AZURE_MONITOR_|LOG_ANALYTICS_|AZURE_RESOURCE_GROUP|VNET_|AGFC_|ACR_)'
+```bash
+azd env get-values | grep -E '^(AKS_|GRAFANA_|APPLICATION_INSIGHTS_|AZURE_MONITOR_|LOG_ANALYTICS_|AZURE_RESOURCE_GROUP|VNET_|AGFC_|ACR_)'
 ```
 
 ### Private cluster
@@ -223,19 +216,19 @@ https://github.com/users/hellices/packages/container/azure-otel/settings → Cha
 
 **B. Use a pull secret**
 
-```powershell
-$ghcrUser  = 'hellices'
-$ghcrToken = '<PAT with read:packages>'
+```bash
+ghcrUser='hellices'
+ghcrToken='<PAT with read:packages>'
 kubectl create namespace azure-otel
-kubectl -n azure-otel create secret docker-registry ghcr `
-  --docker-server=ghcr.io --docker-username=$ghcrUser --docker-password=$ghcrToken
+kubectl -n azure-otel create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username="$ghcrUser" --docker-password="$ghcrToken"
 # Helm:  --set 'global.imagePullSecrets[0].name=ghcr'
 ```
 
 ### Smoke test without ingress
 
-```powershell
-helm upgrade --install azure-otel .\01_deploy_to_aks\azure-otel `
+```bash
+helm upgrade --install azure-otel ./azure-otel \
   --namespace azure-otel --set nodejs.pythonPublicBaseUrl=http://localhost:8000
 
 kubectl -n azure-otel port-forward svc/azure-otel-nodejs 3000:3000   # terminal A

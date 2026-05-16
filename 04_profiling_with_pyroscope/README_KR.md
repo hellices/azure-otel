@@ -53,13 +53,17 @@ flame graph 점프가 자연스럽습니다.
 
 ## 1. Pyroscope 설치
 
+> 아래 모든 명령은 `04_profiling_with_pyroscope/` 디렉토리에서 실행합니다.
+
 ```bash
+cd 04_profiling_with_pyroscope    # 레포 루트에서
+
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
 helm upgrade --install pyroscope grafana/pyroscope \
   -n azure-otel \
-  -f ./04_profiling_with_pyroscope/manifests/pyroscope-values.yaml
+  -f manifests/pyroscope-values.yaml
 
 kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 ```
@@ -68,7 +72,7 @@ kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 
 ```bash
 kubectl -n azure-otel patch deploy azure-otel-spring \
-  --patch-file ./04_profiling_with_pyroscope/manifests/spring-pyroscope-patch.yaml
+  --patch-file manifests/spring-pyroscope-patch.yaml
 kubectl -n azure-otel rollout status deploy/azure-otel-spring --timeout=180s
 ```
 
@@ -116,7 +120,7 @@ UI 확인 포인트:
 ### 4a. Gateway 라우팅
 
 ```bash
-kubectl apply -f ./04_profiling_with_pyroscope/manifests/httproute.yaml
+kubectl apply -f manifests/httproute.yaml
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 echo "Pyroscope URL: http://$alb/pyroscope"
 ```
@@ -129,7 +133,7 @@ ARM `grafanaPlugins` 속성 설정 불필요 — Grafana HTTP API 로
 데이터소스만 만들면 끝:
 
 ```bash
-rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
 gfn=$(az resource list -g "$rg" --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
 gfEndpoint=$(az grafana show -n "$gfn" -g "$rg" --query properties.endpoint -o tsv)
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
@@ -170,8 +174,8 @@ javaagent 확장을 OTel agent 와 함께 로드해야 합니다
 
 ```bash
 # Patch 제거: 차트 재적용으로 deployment 원복
-helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
-kubectl delete -f ./04_profiling_with_pyroscope/manifests/httproute.yaml --ignore-not-found
+helm -n azure-otel upgrade azure-otel ../01_deploy_to_aks/azure-otel
+kubectl delete -f manifests/httproute.yaml --ignore-not-found
 helm -n azure-otel uninstall pyroscope
 kubectl -n azure-otel delete pvc -l app.kubernetes.io/name=pyroscope
 ```

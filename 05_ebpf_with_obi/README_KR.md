@@ -73,7 +73,7 @@ trace context propagation 이 약해져 cross-service trace 연결이
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 # 이미 주입된 pod 의 init container/env 를 떨어내려면 helm 차트 재적용
-helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
+helm -n azure-otel upgrade azure-otel ../01_deploy_to_aks/azure-otel
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
@@ -86,13 +86,17 @@ kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python
 capability, Kubernetes 메타데이터 enrichment, namespace discovery, OTLP
 출력 설정이 들어 있습니다. 옵션 A (디폴트) ↔ B 전환은 `env:` 섹션에서.
 
+> 아래 모든 명령은 `05_ebpf_with_obi/` 디렉토리에서 실행합니다.
+
 ```bash
+cd 05_ebpf_with_obi    # 레포 루트에서
+
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
 helm upgrade --install obi grafana/beyla \
   -n azure-otel \
-  -f ./05_ebpf_with_obi/manifests/obi-values.yaml
+  -f manifests/obi-values.yaml
 
 kubectl -n azure-otel rollout status ds/obi --timeout=180s
 ```
@@ -242,7 +246,7 @@ processors:
 helm -n azure-otel uninstall obi
 kubectl -n azure-otel delete cm obi-config --ignore-not-found
 # (옵션 B 로 갔다가 03 으로 복귀하려면)
-kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
+kubectl apply -f ../03_otel_observability/manifests/instrumentation.yaml
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 

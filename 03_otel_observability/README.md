@@ -39,7 +39,11 @@ step 01 Bicep, so there is no extra infra work here.
 
 ## 0. Clean up stage 02
 
+> All commands below assume you are inside `03_otel_observability/`.
+
 ```bash
+cd 03_otel_observability    # from repo root
+
 kubectl -n azure-otel delete podmonitor.azmonitoring.coreos.com azure-otel-apps --ignore-not-found
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 ```
@@ -48,11 +52,11 @@ kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 ```bash
 kubectl -n azure-otel create secret generic otel-collector-secrets \
-  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING)" \
+  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks)" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl apply -f ./03_otel_observability/manifests/collector.yaml
-kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
+kubectl apply -f manifests/collector.yaml
+kubectl apply -f manifests/instrumentation.yaml
 
 kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
@@ -105,8 +109,8 @@ The built-in **Azure Monitor** datasource has an Application Insights
 1. Grant the Grafana managed identity `Monitoring Reader` on the App
    Insights resource (one-time):
    ```bash
-   rg=$(azd env get-value AZURE_RESOURCE_GROUP)
-   ai=$(azd env get-value APPLICATION_INSIGHTS_NAME)
+   rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
+   ai=$(azd env get-value APPLICATION_INSIGHTS_NAME --cwd ../01_deploy_to_aks)
    gfn=$(az resource list -g "$rg" --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
    gid=$(az grafana show -n "$gfn" -g "$rg" --query identity.principalId -o tsv)
    aiid=$(az monitor app-insights component show -g "$rg" -a "$ai" --query id -o tsv)

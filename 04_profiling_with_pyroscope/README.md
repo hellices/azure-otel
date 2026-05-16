@@ -56,13 +56,17 @@ dashboards — metrics ↔ flame graph correlation comes for free.
 
 ## 1. Install Pyroscope
 
+> All commands below assume you are inside `04_profiling_with_pyroscope/`.
+
 ```bash
+cd 04_profiling_with_pyroscope    # from repo root
+
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
 helm upgrade --install pyroscope grafana/pyroscope \
   -n azure-otel \
-  -f ./04_profiling_with_pyroscope/manifests/pyroscope-values.yaml
+  -f manifests/pyroscope-values.yaml
 
 kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 ```
@@ -71,7 +75,7 @@ kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 
 ```bash
 kubectl -n azure-otel patch deploy azure-otel-spring \
-  --patch-file ./04_profiling_with_pyroscope/manifests/spring-pyroscope-patch.yaml
+  --patch-file manifests/spring-pyroscope-patch.yaml
 kubectl -n azure-otel rollout status deploy/azure-otel-spring --timeout=180s
 ```
 
@@ -120,7 +124,7 @@ In the UI:
 ### 4a. Route the gateway
 
 ```bash
-kubectl apply -f ./04_profiling_with_pyroscope/manifests/httproute.yaml
+kubectl apply -f manifests/httproute.yaml
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 echo "Pyroscope URL: http://$alb/pyroscope"
 ```
@@ -132,7 +136,7 @@ The `grafana-pyroscope-datasource` is a **core** plugin in AMG Standard
 just create the datasource via the Grafana HTTP API:
 
 ```bash
-rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
 gfn=$(az resource list -g "$rg" --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
 gfEndpoint=$(az grafana show -n "$gfn" -g "$rg" --query properties.endpoint -o tsv)
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
@@ -173,8 +177,8 @@ operator copies the JAR into the OTel agent volume — out of scope here.
 
 ```bash
 # Remove the patch by re-applying the chart (resets deployment to chart spec)
-helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
-kubectl delete -f ./04_profiling_with_pyroscope/manifests/httproute.yaml --ignore-not-found
+helm -n azure-otel upgrade azure-otel ../01_deploy_to_aks/azure-otel
+kubectl delete -f manifests/httproute.yaml --ignore-not-found
 helm -n azure-otel uninstall pyroscope
 kubectl -n azure-otel delete pvc -l app.kubernetes.io/name=pyroscope
 ```

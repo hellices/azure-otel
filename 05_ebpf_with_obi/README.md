@@ -78,7 +78,7 @@ break.
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 # Strip the init containers / env from already-running pods by re-applying the chart
-helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
+helm -n azure-otel upgrade azure-otel ../01_deploy_to_aks/azure-otel
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
@@ -92,13 +92,17 @@ kernel capabilities, Kubernetes metadata enrichment, namespace discovery,
 and OTLP output to the stage-03 collector. Edit the `env:` section to
 switch between option A (default) and option B.
 
+> All commands below assume you are inside `05_ebpf_with_obi/`.
+
 ```bash
+cd 05_ebpf_with_obi    # from repo root
+
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
 helm upgrade --install obi grafana/beyla \
   -n azure-otel \
-  -f ./05_ebpf_with_obi/manifests/obi-values.yaml
+  -f manifests/obi-values.yaml
 
 kubectl -n azure-otel rollout status ds/obi --timeout=180s
 ```
@@ -252,7 +256,7 @@ processors:
 helm -n azure-otel uninstall obi
 kubectl -n azure-otel delete cm obi-config --ignore-not-found
 # To return from option B back to 03:
-kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
+kubectl apply -f ../03_otel_observability/manifests/instrumentation.yaml
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
