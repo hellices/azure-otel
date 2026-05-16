@@ -339,6 +339,19 @@ resource dcra 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
   }
 }
 
+// Associate the DCE with the AKS cluster so ama-metrics can resolve the
+// configuration endpoint over private link. Without this, MDSD receives
+// 403 "Data collection endpoint must be used to access configuration over
+// private link" because ENDPOINT_FQDN stays empty.
+resource dceAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2023-03-11' = {
+  scope: aks
+  name: 'configurationAccessEndpoint'
+  properties: {
+    dataCollectionEndpointId: dce.id
+    description: 'DCE association for ama-metrics configuration access over private link.'
+  }
+}
+
 // NOTE: ALB controller (Microsoft.AlbController extension) is enabled by the
 // postprovision hook via `az aks update --enable-application-load-balancer`.
 // As of 2026-05 the extension is not yet GA in every region (e.g. koreacentral

@@ -56,29 +56,29 @@ dashboards — metrics ↔ flame graph correlation comes for free.
 
 ## 1. Install Pyroscope
 
-```powershell
+```bash
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-helm upgrade --install pyroscope grafana/pyroscope `
-  -n azure-otel `
-  -f .\04_profiling_with_pyroscope\manifests\pyroscope-values.yaml
+helm upgrade --install pyroscope grafana/pyroscope \
+  -n azure-otel \
+  -f ./04_profiling_with_pyroscope/manifests/pyroscope-values.yaml
 
 kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 ```
 
 ## 2. Inject the Pyroscope Java agent into the Spring deployment
 
-```powershell
-kubectl -n azure-otel patch deploy azure-otel-spring `
-  --patch-file .\04_profiling_with_pyroscope\manifests\spring-pyroscope-patch.yaml
+```bash
+kubectl -n azure-otel patch deploy azure-otel-spring \
+  --patch-file ./04_profiling_with_pyroscope/manifests/spring-pyroscope-patch.yaml
 kubectl -n azure-otel rollout status deploy/azure-otel-spring --timeout=180s
 ```
 
 Verify both javaagents loaded:
 
-```powershell
-kubectl -n azure-otel logs deploy/azure-otel-spring --tail=20 | Select-String -Pattern 'pyroscope|javaagent|otel'
+```bash
+kubectl -n azure-otel logs deploy/azure-otel-spring --tail=20 | grep -iE 'pyroscope|javaagent|otel'
 kubectl -n azure-otel exec deploy/azure-otel-spring -- printenv JAVA_TOOL_OPTIONS
 # Expected:
 #   -javaagent:/pyroscope/pyroscope.jar -javaagent:/otel-auto-instrumentation-java/javaagent.jar
@@ -92,14 +92,14 @@ without conflicts.
 
 Generate some CPU work:
 
-```powershell
-$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
-1..200 | ForEach-Object { Invoke-WebRequest -UseBasicParsing -Uri "http://$alb/api/items" -TimeoutSec 5 | Out-Null }
+```bash
+alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
+for i in $(seq 1 200); do curl -s "http://$alb/api/items" > /dev/null; done
 ```
 
 Open the Pyroscope UI:
 
-```powershell
+```bash
 kubectl -n azure-otel port-forward svc/pyroscope 4040:4040
 # browse http://localhost:4040
 ```
@@ -119,10 +119,10 @@ In the UI:
 
 ### 4a. Route the gateway
 
-```powershell
-kubectl apply -f .\04_profiling_with_pyroscope\manifests\httproute.yaml
-$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
-"Pyroscope URL: http://$alb/pyroscope"
+```bash
+kubectl apply -f ./04_profiling_with_pyroscope/manifests/httproute.yaml
+alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
+echo "Pyroscope URL: http://$alb/pyroscope"
 ```
 
 ### 4b. Register the datasource in AMG
@@ -131,27 +131,25 @@ The `grafana-pyroscope-datasource` is a **core** plugin in AMG Standard
 (Grafana 12) — no plugin install / `grafanaPlugins` ARM property needed,
 just create the datasource via the Grafana HTTP API:
 
-```powershell
-$rg         = azd env get-value AZURE_RESOURCE_GROUP
-$gfn        = az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv
-$gfEndpoint = az grafana show -n $gfn -g $rg --query properties.endpoint -o tsv
-$alb        = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
-$tok        = az account get-access-token --resource "https://grafana.azure.com" --query accessToken -o tsv
-$h          = @{ Authorization = "Bearer $tok" }
+```bash
+rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+gfn=$(az resource list -g "$rg" --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
+gfEndpoint=$(az grafana show -n "$gfn" -g "$rg" --query properties.endpoint -o tsv)
+alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
+tok=$(az account get-access-token --resource "https://grafana.azure.com" --query accessToken -o tsv)
 
-$payload = @{
-  name   = "Pyroscope"
-  type   = "grafana-pyroscope-datasource"
-  access = "proxy"
-  url    = "http://$alb/pyroscope"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Headers $h -Method Post -Uri "$gfEndpoint/api/datasources" `
-  -ContentType "application/json" -Body $payload
+curl -sS -X POST "$gfEndpoint/api/datasources" \
+  -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg url "http://$alb/pyroscope" '{
+    name: "Pyroscope",
+    type: "grafana-pyroscope-datasource",
+    access: "proxy",
+    url: $url
+  }')"
 
 # Health check
-$ds = Invoke-RestMethod -Headers $h -Uri "$gfEndpoint/api/datasources/name/Pyroscope"
-Invoke-RestMethod -Headers $h -Uri "$gfEndpoint/api/datasources/uid/$($ds.uid)/health"
+dsUid=$(curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/name/Pyroscope" | jq -r .uid)
+curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/uid/$dsUid/health"
 # Expect: status = OK, message = "Data source is working"
 ```
 
@@ -173,10 +171,10 @@ operator copies the JAR into the OTel agent volume — out of scope here.
 
 ## Cleanup
 
-```powershell
+```bash
 # Remove the patch by re-applying the chart (resets deployment to chart spec)
-helm -n azure-otel upgrade azure-otel .\01_deploy_to_aks\azure-otel
-kubectl delete -f .\04_profiling_with_pyroscope\manifests\httproute.yaml --ignore-not-found
+helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
+kubectl delete -f ./04_profiling_with_pyroscope/manifests/httproute.yaml --ignore-not-found
 helm -n azure-otel uninstall pyroscope
 kubectl -n azure-otel delete pvc -l app.kubernetes.io/name=pyroscope
 ```

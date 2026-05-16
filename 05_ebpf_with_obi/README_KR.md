@@ -68,12 +68,12 @@ SDK 주입을 제거하면 노드/파이썬/자바 이미지 빌드 변경 없�
 trace context propagation 이 약해져 cross-service trace 연결이
 끊어질 수 있습니다 (특히 Node → Python 같은 outbound HTTP 호출).
 
-```powershell
+```bash
 # 03 의 Instrumentation CR 제거 → OTel Operator webhook 이 더 이상 주입 안 함
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 # 이미 주입된 pod 의 init container/env 를 떨어내려면 helm 차트 재적용
-helm -n azure-otel upgrade azure-otel .\01_deploy_to_aks\azure-otel
+helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
@@ -82,61 +82,17 @@ kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python
 
 ## 1. OBI 설치
 
-```powershell
+[`manifests/obi-values.yaml`](manifests/obi-values.yaml) 에 커널
+capability, Kubernetes 메타데이터 enrichment, namespace discovery, OTLP
+출력 설정이 들어 있습니다. 옵션 A (디폴트) ↔ B 전환은 `env:` 섹션에서.
+
+```bash
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-# values 인라인 — manifests/ 에 옮기는 것은 후속 작업
-@'
-serviceAccount:
-  create: true
-
-# 노드 커널 hook 을 위한 권한
-hostPID: true
-securityContext:
-  privileged: false
-  capabilities:
-    add:
-      - BPF
-      - PERFMON
-      - SYS_PTRACE
-      - SYS_RESOURCE
-      - DAC_READ_SEARCH
-      - CHECKPOINT_RESTORE
-
-# Kubernetes 메타데이터 enrichment
-config:
-  data:
-    attributes:
-      kubernetes:
-        enable: true
-    discovery:
-      services:
-        - k8s_namespace: azure-otel
-          # 옵션 A-2 를 쓰는 경우 아래 주석 해제 (03 SDK 가 커버하는 deployment 제외)
-          # k8s_deployment_name: ^(?!azure-otel-(spring|python|nodejs)$).*$
-    routes:
-      unmatched: heuristic     # /api/items/{id} 같은 path → /api/items/:id
-      patterns:
-        - /api/items/:id
-
-env:
-  # OTLP 송신 — 03 의 collector 로
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.azure-otel.svc:4317
-  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-
-  # 옵션 A-1 의 디폴트: traces 끄고 metrics 만
-  BEYLA_TRACES_ENABLED:  "false"
-  BEYLA_METRICS_ENABLED: "true"
-
-  # 시그널을 모두 OBI 로 받고 싶으면 (옵션 B):
-  # BEYLA_TRACES_ENABLED:  "true"
-  # BEYLA_METRICS_ENABLED: "true"
-'@ | Set-Content -Encoding utf8 .\05_ebpf_with_obi\manifests\obi-values.yaml
-
-helm upgrade --install obi grafana/beyla `
-  -n azure-otel `
-  -f .\05_ebpf_with_obi\manifests\obi-values.yaml
+helm upgrade --install obi grafana/beyla \
+  -n azure-otel \
+  -f ./05_ebpf_with_obi/manifests/obi-values.yaml
 
 kubectl -n azure-otel rollout status ds/obi --timeout=180s
 ```
@@ -151,22 +107,22 @@ kubectl -n azure-otel rollout status ds/obi --timeout=180s
 Pod/Service/ReplicaSet 을 watch 합니다. 기본 chart 가 ClusterRole 을
 만들지만 명시 확인:
 
-```powershell
-kubectl get clusterrole obi -o yaml | Select-String -Pattern 'pods|services|replicasets|nodes'
+```bash
+kubectl get clusterrole obi -o yaml | grep -E 'pods|services|replicasets|nodes'
 # 기대값: get/list/watch on pods, services, replicasets, nodes
 ```
 
 ## 3. 인입 확인
 
-```powershell
-$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
-1..50 | ForEach-Object { Invoke-WebRequest -UseBasicParsing -Uri "http://$alb/api/items" -TimeoutSec 5 | Out-Null }
+```bash
+alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
+for i in $(seq 1 50); do curl -s "http://$alb/api/items" > /dev/null; done
 
 # OBI 로그
-kubectl -n azure-otel logs ds/obi --tail=30 | Select-String -Pattern 'service|trace|metric|discover'
+kubectl -n azure-otel logs ds/obi --tail=30 | grep -iE 'service|trace|metric|discover'
 
 # Collector 가 OBI 로부터 OTLP 를 받고 있는지
-kubectl -n azure-otel logs deploy/otel-collector --tail=50 | Select-String -Pattern 'beyla|obi|telemetry.sdk.name'
+kubectl -n azure-otel logs deploy/otel-collector --tail=50 | grep -iE 'beyla|obi|telemetry.sdk.name'
 ```
 
 App Insights (옵션 B 또는 옵션 A-2) Kusto:
@@ -198,7 +154,7 @@ OBI DaemonSet egress 가 `otel-collector:4317` 로 나갈 수 있어야 합니�
 걸어 두므로, OBI ServiceAccount/Pod label 을 collector 의 ingress 룰에
 명시 추가:
 
-```powershell
+```bash
 # 어떤 label 로 떴는지 확인
 kubectl -n azure-otel get pod -l app.kubernetes.io/name=beyla -o 'jsonpath={range .items[*]}{.metadata.labels}{"\n"}{end}'
 ```
@@ -228,7 +184,7 @@ spans 의 peer.service 가 `unknown` 이 됩니다.
 
 세 컴포넌트가 verifier/JIT/`memlock` 한도를 공유합니다. 노드에서:
 
-```powershell
+```bash
 kubectl debug node/<node> -it --image=ubuntu -- bash -c 'ulimit -l; sysctl bpf_jit_limit; bpftool prog show | wc -l'
 ```
 
@@ -282,11 +238,11 @@ processors:
 
 ## 정리
 
-```powershell
+```bash
 helm -n azure-otel uninstall obi
 kubectl -n azure-otel delete cm obi-config --ignore-not-found
 # (옵션 B 로 갔다가 03 으로 복귀하려면)
-kubectl apply -f .\03_otel_observability\manifests\instrumentation.yaml
+kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 

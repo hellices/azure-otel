@@ -38,20 +38,20 @@ AMPLS / Private Endpoint / Private DNS Zone 은 01단계 Bicep 에서 이미 만
 
 ## 0. 02단계 정리
 
-```powershell
+```bash
 kubectl -n azure-otel delete podmonitor.azmonitoring.coreos.com azure-otel-apps --ignore-not-found
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 ```
 
 ## 1. Connection String Secret + 매니페스트 적용
 
-```powershell
-kubectl -n azure-otel create secret generic otel-collector-secrets `
-  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING)" `
+```bash
+kubectl -n azure-otel create secret generic otel-collector-secrets \
+  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING)" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl apply -f .\03_otel_observability\manifests\collector.yaml
-kubectl apply -f .\03_otel_observability\manifests\instrumentation.yaml
+kubectl apply -f ./03_otel_observability/manifests/collector.yaml
+kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
 
 kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
@@ -59,18 +59,18 @@ kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python
 
 ama-metrics가 새 PodMonitor를 못 보면 한 번 재시작:
 
-```powershell
+```bash
 kubectl -n kube-system rollout restart deploy/ama-metrics
 ```
 
 ## 2. 동작 확인
 
-```powershell
+```bash
 kubectl -n azure-otel logs deploy/otel-collector --tail=50
 
 # 메트릭이 :8889/metrics 로 나오는지
 kubectl -n azure-otel port-forward deploy/otel-collector 8889:8889
-curl.exe -s http://localhost:8889/metrics | Select-String http_server_request_duration_seconds_count -List
+curl -s http://localhost:8889/metrics | grep -m1 http_server_request_duration_seconds_count
 ```
 
 App Insights → **Transaction search** 또는 Logs:
@@ -103,14 +103,14 @@ requests | where timestamp > ago(15m)
 
 1. Grafana managed identity 에 App Insights 에 대한 `Monitoring Reader`
    권한 부여 (1회성):
-   ```powershell
-   $rg   = azd env get-value AZURE_RESOURCE_GROUP
-   $ai   = azd env get-value APPLICATION_INSIGHTS_NAME
-   $gfn  = (az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
-   $gid  = az grafana show -n $gfn -g $rg --query identity.principalId -o tsv
-   $aiid = az monitor app-insights component show -g $rg -a $ai --query id -o tsv
-   az role assignment create --assignee-object-id $gid --assignee-principal-type ServicePrincipal `
-     --role "Monitoring Reader" --scope $aiid
+   ```bash
+   rg=$(azd env get-value AZURE_RESOURCE_GROUP)
+   ai=$(azd env get-value APPLICATION_INSIGHTS_NAME)
+   gfn=$(az resource list -g "$rg" --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv)
+   gid=$(az grafana show -n "$gfn" -g "$rg" --query identity.principalId -o tsv)
+   aiid=$(az monitor app-insights component show -g "$rg" -a "$ai" --query id -o tsv)
+   az role assignment create --assignee-object-id "$gid" --assignee-principal-type ServicePrincipal \
+     --role "Monitoring Reader" --scope "$aiid"
    ```
 2. Grafana → **Explore** → datasource **Azure Monitor** → Service
    **Application Insights** → Query type **Traces** → App Insights 리소스

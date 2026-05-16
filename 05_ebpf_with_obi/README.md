@@ -73,12 +73,12 @@ the table above: trace context propagation becomes spotty, so
 cross-service traces (especially Node → Python outbound HTTP) may
 break.
 
-```powershell
+```bash
 # Remove the Instrumentation CR so the OTel Operator stops mutating new pods
 kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 # Strip the init containers / env from already-running pods by re-applying the chart
-helm -n azure-otel upgrade azure-otel .\01_deploy_to_aks\azure-otel
+helm -n azure-otel upgrade azure-otel ./01_deploy_to_aks/azure-otel
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 
@@ -87,61 +87,18 @@ endpoint and reuse the AppI / AMW exporter fan-out.
 
 ## 1. Install OBI
 
-```powershell
+The values file at [`manifests/obi-values.yaml`](manifests/obi-values.yaml) configures
+kernel capabilities, Kubernetes metadata enrichment, namespace discovery,
+and OTLP output to the stage-03 collector. Edit the `env:` section to
+switch between option A (default) and option B.
+
+```bash
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-# Inline values for now — moving them under manifests/ is a follow-up.
-@'
-serviceAccount:
-  create: true
-
-# Required for kernel hooks
-hostPID: true
-securityContext:
-  privileged: false
-  capabilities:
-    add:
-      - BPF
-      - PERFMON
-      - SYS_PTRACE
-      - SYS_RESOURCE
-      - DAC_READ_SEARCH
-      - CHECKPOINT_RESTORE
-
-# Kubernetes metadata enrichment
-config:
-  data:
-    attributes:
-      kubernetes:
-        enable: true
-    discovery:
-      services:
-        - k8s_namespace: azure-otel
-          # For option A-2, uncomment to skip deployments already covered by 03 SDK:
-          # k8s_deployment_name: ^(?!azure-otel-(spring|python|nodejs)$).*$
-    routes:
-      unmatched: heuristic     # /api/items/{id} → /api/items/:id
-      patterns:
-        - /api/items/:id
-
-env:
-  # OTLP egress to the stage-03 collector
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.azure-otel.svc:4317
-  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-
-  # Default for option A-1: traces off, metrics on
-  BEYLA_TRACES_ENABLED:  "false"
-  BEYLA_METRICS_ENABLED: "true"
-
-  # For option B (everything via OBI):
-  # BEYLA_TRACES_ENABLED:  "true"
-  # BEYLA_METRICS_ENABLED: "true"
-'@ | Set-Content -Encoding utf8 .\05_ebpf_with_obi\manifests\obi-values.yaml
-
-helm upgrade --install obi grafana/beyla `
-  -n azure-otel `
-  -f .\05_ebpf_with_obi\manifests\obi-values.yaml
+helm upgrade --install obi grafana/beyla \
+  -n azure-otel \
+  -f ./05_ebpf_with_obi/manifests/obi-values.yaml
 
 kubectl -n azure-otel rollout status ds/obi --timeout=180s
 ```
@@ -156,22 +113,22 @@ kubectl -n azure-otel rollout status ds/obi --timeout=180s
 Pod / Service / ReplicaSet objects. The chart creates the ClusterRole,
 but verify:
 
-```powershell
-kubectl get clusterrole obi -o yaml | Select-String -Pattern 'pods|services|replicasets|nodes'
+```bash
+kubectl get clusterrole obi -o yaml | grep -E 'pods|services|replicasets|nodes'
 # Expect: get/list/watch on pods, services, replicasets, nodes
 ```
 
 ## 3. Verify ingestion
 
-```powershell
-$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
-1..50 | ForEach-Object { Invoke-WebRequest -UseBasicParsing -Uri "http://$alb/api/items" -TimeoutSec 5 | Out-Null }
+```bash
+alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
+for i in $(seq 1 50); do curl -s "http://$alb/api/items" > /dev/null; done
 
 # OBI logs
-kubectl -n azure-otel logs ds/obi --tail=30 | Select-String -Pattern 'service|trace|metric|discover'
+kubectl -n azure-otel logs ds/obi --tail=30 | grep -iE 'service|trace|metric|discover'
 
 # Collector receiving OBI OTLP
-kubectl -n azure-otel logs deploy/otel-collector --tail=50 | Select-String -Pattern 'beyla|obi|telemetry.sdk.name'
+kubectl -n azure-otel logs deploy/otel-collector --tail=50 | grep -iE 'beyla|obi|telemetry.sdk.name'
 ```
 
 App Insights (option B or A-2) Kusto:
@@ -204,7 +161,7 @@ The OBI DaemonSet's egress must reach `otel-collector:4317`. Stage 01's
 `networkpolicy.yaml` runs default-deny in `azure-otel`, so add the OBI
 ServiceAccount / pod label to the collector's ingress rule:
 
-```powershell
+```bash
 # Inspect the labels Helm gave the OBI pods
 kubectl -n azure-otel get pod -l app.kubernetes.io/name=beyla -o 'jsonpath={range .items[*]}{.metadata.labels}{"\n"}{end}'
 ```
@@ -236,7 +193,7 @@ OBI HTTP spans. Recommended split:
 All three components share verifier / JIT / `memlock` budgets. Inspect
 a node:
 
-```powershell
+```bash
 kubectl debug node/<node> -it --image=ubuntu -- bash -c 'ulimit -l; sysctl bpf_jit_limit; bpftool prog show | wc -l'
 ```
 
@@ -291,11 +248,11 @@ processors:
 
 ## Cleanup
 
-```powershell
+```bash
 helm -n azure-otel uninstall obi
 kubectl -n azure-otel delete cm obi-config --ignore-not-found
 # To return from option B back to 03:
-kubectl apply -f .\03_otel_observability\manifests\instrumentation.yaml
+kubectl apply -f ./03_otel_observability/manifests/instrumentation.yaml
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
 

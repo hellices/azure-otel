@@ -45,18 +45,18 @@ That's why this stage has no `kubectl patch deploy ...` step.
 The Operator's admission webhook needs TLS certs, so **cert-manager** is
 required. Skip if it's already installed:
 
-```powershell
+```bash
 # (A) cert-manager
-kubectl get ns cert-manager 2>$null
+kubectl get ns cert-manager 2>/dev/null
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 
 # (B) OpenTelemetry Operator
 kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
-kubectl -n opentelemetry-operator-system rollout status deploy/opentelemetry-operator --timeout=180s
+kubectl -n opentelemetry-operator-system rollout status deploy/opentelemetry-operator-controller-manager --timeout=180s
 
 kubectl -n opentelemetry-operator-system get pods
-kubectl get crd | Select-String opentelemetry
+kubectl get crd | grep opentelemetry
 ```
 
 ### 2. Apply the Instrumentation CR
@@ -65,7 +65,7 @@ Declares the env vars each language SDK gets when injected as an init
 container. Metrics are exposed via the **Prometheus exporter (`:9464/metrics`)**;
 traces and logs stay off in this stage (step 03 switches them to OTLP).
 
-```powershell
+```bash
 cd ./02_metrics_via_podmonitor    # from repo root
 kubectl apply -f manifests/instrumentation.yaml
 kubectl -n azure-otel get instrumentation
@@ -73,28 +73,38 @@ kubectl -n azure-otel get instrumentation
 
 Once the CR exists, the Operator's webhook reads the chart's pre-set pod
 annotations and injects an init container. Existing pods need a one-time
-restart for the injection to take effect:
+restart for the injection to take effect.
 
-```powershell
+> **Wait ~10 seconds** after `kubectl apply -f manifests/instrumentation.yaml`
+> before restarting pods. If you restart too quickly, the webhook may not
+> have reconciled the new CR yet and some pods will be created without the
+> init container.
+
+```bash
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 kubectl -n azure-otel rollout status   deploy azure-otel-spring --timeout=180s
 kubectl -n azure-otel rollout status   deploy azure-otel-python --timeout=180s
 kubectl -n azure-otel rollout status   deploy azure-otel-nodejs --timeout=180s
-
-# Verify each pod has an opentelemetry-auto-instrumentation-{java|python|nodejs} init container
-kubectl -n azure-otel get pods
 ```
+
+Verify each pod has an `opentelemetry-auto-instrumentation-*` init container:
+
+```bash
+kubectl -n azure-otel get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.initContainers[*]}{.name}{", "}{end}{"\n"}{end}'
+```
+
+If any pod is missing its init container, restart that deployment again.
 
 ### 3. Confirm the app exposes metrics on :9464
 
 Repeat for each service:
 
-```powershell
+```bash
 # Terminal 1
 kubectl -n azure-otel port-forward deploy/azure-otel-spring 9464:9464
 
 # Terminal 2
-curl.exe -s http://localhost:9464/metrics | Select-String 'http_server' | Select-Object -First 5
+curl -s http://localhost:9464/metrics | grep 'http_server' | head -5
 ```
 
 You should see `http_server_request_duration_seconds_bucket`, `process_*`, and
@@ -102,14 +112,14 @@ for the JVM `jvm_memory_used_bytes` etc.
 
 ### 4. Apply the PodMonitor
 
-```powershell
+```bash
 kubectl apply -f manifests/podmonitor.yaml
 kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
 ```
 
 > If the CRD was just installed, restart ama-metrics so it picks it up:
 >
-> ```powershell
+> ```bash
 > kubectl -n kube-system rollout restart deploy/ama-metrics
 > ```
 
@@ -121,13 +131,18 @@ port-forward an ama-metrics pod to :9090 and query `/api/v1/targets` directly
 
 #### A. Query the AMW Prometheus endpoint directly (most accurate)
 
-```powershell
-$amwUrl = (az monitor account show -g (azd env get-value AZURE_RESOURCE_GROUP) `
-            -n (azd env get-value AZURE_MONITOR_WORKSPACE_NAME) `
-            --query metrics.prometheusQueryEndpoint -o tsv)
-$amwTok = (az account get-access-token --resource https://prometheus.monitor.azure.com `
-            --query accessToken -o tsv)
-curl.exe -sS -H "Authorization: Bearer $amwTok" `
+> `azd env get-value` requires the directory containing `azure.yaml`
+> (`01_deploy_to_aks`). The `--cwd` flag avoids having to `cd` there.
+
+```bash
+amwUrl=$(az monitor account show \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" \
+  --query metrics.prometheusQueryEndpoint -o tsv)
+amwTok=$(az account get-access-token \
+  --resource https://prometheus.monitor.azure.com \
+  --query accessToken -o tsv)
+curl -sS -H "Authorization: Bearer $amwTok" \
   "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)"
 ```
 
@@ -135,6 +150,15 @@ If `{"service":"nodejs"}`, `python`, and `spring` are returned, the pipeline
 is healthy.
 
 #### B. Verify the Managed Grafana → AMW path
+
+Open the Grafana portal:
+
+```bash
+az grafana show \
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+  --query properties.endpoint -o tsv
+```
 
 Managed Grafana → Explore → datasource: **Managed_Prometheus_<amw-name>**
 
@@ -147,14 +171,18 @@ sum by (service) (rate(http_server_request_duration_seconds_count[5m]))
 > system-assigned MI is missing the `Monitoring Data Reader` role on AMW
 > (or AAD propagation is still pending — usually a few minutes):
 >
-> ```powershell
-> $mi    = az grafana show -n (azd env get-value GRAFANA_NAME) `
->            -g (azd env get-value AZURE_RESOURCE_GROUP) --query identity.principalId -o tsv
-> $amwId = az monitor account show -n (azd env get-value AZURE_MONITOR_WORKSPACE_NAME) `
->            -g (azd env get-value AZURE_RESOURCE_GROUP) --query id -o tsv
-> az role assignment create --assignee-object-id $mi `
->   --assignee-principal-type ServicePrincipal `
->   --role 'Monitoring Data Reader' --scope $amwId
+> ```bash
+> mi=$(az grafana show \
+>   -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" \
+>   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+>   --query identity.principalId -o tsv)
+> amwId=$(az monitor account show \
+>   -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" \
+>   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+>   --query id -o tsv)
+> az role assignment create --assignee-object-id "$mi" \
+>   --assignee-principal-type ServicePrincipal \
+>   --role 'Monitoring Data Reader' --scope "$amwId"
 > ```
 
 ### 6. Import the Grafana dashboards (Node / Python / Spring)
@@ -170,23 +198,20 @@ There are only three of them so the UI is easiest. To bulk-import via CLI:
 
 <details><summary>CLI import (optional)</summary>
 
-```powershell
-$grafana = (azd env get-value GRAFANA_ENDPOINT)
+```bash
+grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
 # Azure Managed Grafana audience (fixed GUID)
-$token   = az account get-access-token --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
-              --query accessToken -o tsv
-$enc = New-Object Text.UTF8Encoding $false   # avoid PS5 BOM
-foreach ($f in 'dashboards/nodejs.json','dashboards/python.json','dashboards/spring.json') {
-  $dash = Get-Content $f -Raw | ConvertFrom-Json
-  $dash | Add-Member -NotePropertyName id -NotePropertyValue $null -Force
-  $body = @{ dashboard = $dash; overwrite = $true; folderId = 0 } | ConvertTo-Json -Depth 100
-  [IO.File]::WriteAllText("$PWD\body.json", $body, $enc)
-  curl.exe -sS -X POST "$grafana/api/dashboards/db" `
-    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' `
-    --data-binary '@body.json'
-  ''
-}
-Remove-Item body.json
+token=$(az account get-access-token \
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f \
+  --query accessToken -o tsv)
+for f in dashboards/nodejs.json dashboards/python.json dashboards/spring.json; do
+  jq '{dashboard: (. | .id = null), overwrite: true, folderId: 0}' "$f" > body.json
+  curl -sS -X POST "$grafana/api/dashboards/db" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    --data-binary @body.json
+  echo
+done
+rm -f body.json
 ```
 
 </details>
@@ -216,6 +241,11 @@ PodMonitor's relabelings.
 | `:9464` returns nothing | The SDK didn't start the Prometheus exporter or the port is in use. `kubectl logs <pod> -c spring \| grep -i prometheus` |
 | No metrics in Grafana | ama-metrics may not have noticed the new PodMonitor CRD yet. `kubectl -n kube-system rollout restart deploy/ama-metrics` |
 | `http_response_status_code` label is missing | Older OTel SDK versions emit `http_status_code` (or other names). Replace the label name in the panel PromQL with whatever the metric actually exposes. |
+| AMW query returns 403 `Data collection endpoint must be used…` | AMPLS / Private Link is active but the `configurationAccessEndpoint` DCRA (DCE → AKS association) is missing. ama-metrics can't fetch its scrape config. Create the association: `az monitor data-collection rule association create --name configurationAccessEndpoint --resource <aksId> --data-collection-endpoint-id <dceId>`. See the AMPLS section in [01_deploy_to_aks/README](../01_deploy_to_aks/README.md). |
+| Grafana 401 / `Authentication to data source failed` | Managed Grafana's system-assigned MI is missing `Monitoring Data Reader` on AMW. Assign the role (see step 5·B) and wait a few minutes for AAD propagation. |
+| `azd env get-value` returns empty / `no project exists` | You're not in the `01_deploy_to_aks/` directory (where `azure.yaml` lives). Either `cd` there or add `--cwd ../01_deploy_to_aks` to the command. |
+| Dashboard panels all fall back to Azure Monitor | The datasource UID in the JSON doesn't match the current Grafana instance. The dashboards use a `${datasource}` variable — after import, select `Managed_Prometheus_<amw-name>` from the **Prometheus** dropdown at the top. |
+| Init container missing despite CR being applied | Race condition — if you restarted pods immediately after `kubectl apply -f instrumentation.yaml`, the webhook may not have reconciled yet. Wait ~10 seconds, then restart the affected deployment again. |
 
 ## Next
 

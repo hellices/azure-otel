@@ -133,6 +133,64 @@ Role assignments (with `principalId` auto-injected):
 - Deployer → Grafana Admin / AKS RBAC Cluster Admin + Cluster User
 - Grafana MSI → Monitoring Data Reader on AMW
 
+### AMPLS + Private Link architecture
+
+`azd up` creates an **Azure Monitor Private Link Scope (AMPLS)** so that
+monitoring traffic between AKS pods and Azure Monitor services stays inside
+the VNet. The diagram below shows every resource and how they connect:
+
+```
+┌─── AKS VNet ──────────────────────────────────────────────────────────┐
+│                                                                       │
+│  ama-metrics pod                                                      │
+│    ├─ prometheus-collector (MDSD)                                     │
+│    │    ├─ reads DCR config via DCE (privatelink DNS → PE)            │
+│    │    └─ remote-writes metrics via DCE → AMW                        │
+│    └─ MetricsExtension (port 55680)                                   │
+│                                                                       │
+│  otel-collector pod (step 03)                                         │
+│    └─ azuremonitor exporter → App Insights (privatelink DNS → PE)     │
+│                                                                       │
+│  ┌──── Private Endpoint (pe-ampls-*) ──────────────────────────────┐  │
+│  │  NIC in aks-subnet → private IPs for all AMPLS-linked services  │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────┘
+         │ private IPs resolved via ▼
+   ┌─────────────────────────────────────────────────────────────────┐
+   │  6 Private DNS Zones (linked to VNet)                          │
+   │   • privatelink.monitor.azure.com                              │
+   │   • privatelink.oms.opinsights.azure.com                       │
+   │   • privatelink.ods.opinsights.azure.com                       │
+   │   • privatelink.agentsvc.azure-automation.net                  │
+   │   • privatelink.<region>.handler.control.monitor.azure.com     │
+   │   • privatelink.<region>.ingest.monitor.azure.com              │
+   └─────────────────────────────────────────────────────────────────┘
+         │ A records auto-created by PE DNS Zone Group ▼
+   ┌─────────────────────────────────────────────────────────────────┐
+   │  AMPLS (ampls-*) ── Scoped Resources:                         │
+   │   • App Insights  (appi-link)                                  │
+   │   • Log Analytics (law-link)                                   │
+   │   • DCE           (dce-link)                                   │
+   │  Access mode: Open / Open                                     │
+   └─────────────────────────────────────────────────────────────────┘
+```
+
+**Data Collection resources** (Prometheus metrics pipeline):
+
+| Resource | Name | Purpose |
+|---|---|---|
+| **DCE** (Data Collection Endpoint) | `dce-*` | Ingestion + config endpoint for ama-metrics. Linked into AMPLS so traffic goes through the PE. |
+| **DCR** (Data Collection Rule) | `dcr-*` | Defines `PrometheusForwarder` data source → AMW destination. References the DCE via `dataCollectionEndpointId`. |
+| **DCRA** (DCR Association) | `send-to-amw` | Associates the DCR with the AKS cluster. Tells ama-metrics which DCR governs the data flow. |
+| **DCRA** (DCE Association) | `configurationAccessEndpoint` | Associates the DCE with the AKS cluster. **Required for private link** — without it, MDSD cannot resolve the DCE endpoint and receives `403 InvalidAccess` from AMCS. |
+
+> **Why two DCRAs?** The DCR DCRA tells ama-metrics *what to collect and
+> where to send*. The DCE DCRA (`configurationAccessEndpoint`) tells
+> ama-metrics *how to reach the configuration service*. When private DNS
+> zones redirect `*.monitor.azure.com` to private IPs, AMCS requires
+> DCE-based config access — without the DCE DCRA, `ENDPOINT_FQDN` stays
+> empty and MDSD gets a 403.
+
 ### What `azd up` does
 
 1. Subscription-scope Bicep creates the RG

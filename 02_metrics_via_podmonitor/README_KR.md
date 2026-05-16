@@ -46,18 +46,18 @@
 admission webhook이 TLS 인증서를 요구하므로 **cert-manager**가 필요합니다.
 이미 설치되어 있으면 건너뛰세요:
 
-```powershell
+```bash
 # (A) cert-manager (없을 때만)
-kubectl get ns cert-manager 2>$null
+kubectl get ns cert-manager 2>/dev/null
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 
 # (B) OpenTelemetry Operator
 kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
-kubectl -n opentelemetry-operator-system rollout status deploy/opentelemetry-operator --timeout=180s
+kubectl -n opentelemetry-operator-system rollout status deploy/opentelemetry-operator-controller-manager --timeout=180s
 
 kubectl -n opentelemetry-operator-system get pods
-kubectl get crd | Select-String opentelemetry
+kubectl get crd | grep opentelemetry
 ```
 
 ### 2. Instrumentation CR 적용
@@ -66,7 +66,7 @@ kubectl get crd | Select-String opentelemetry
 metrics는 **Prometheus exporter(`:9464/metrics`)** 로 노출, traces/logs는
 이번 단계에서 끕니다(03단계에서 OTLP로 전환).
 
-```powershell
+```bash
 cd ./02_metrics_via_podmonitor   # 레포 루트에서
 kubectl apply -f manifests/instrumentation.yaml
 kubectl -n azure-otel get instrumentation
@@ -74,28 +74,37 @@ kubectl -n azure-otel get instrumentation
 
 CR이 생기면 OTel Operator webhook이 차트가 미리 달아둔 annotation을 보고
 init container를 주입합니다. 이미 돌고 있는 Pod는 한 번 restart 해야
-주입이 반영됩니다:
+주입이 반영됩니다.
 
-```powershell
+> `kubectl apply -f manifests/instrumentation.yaml` 후 **10초 정도 대기** 후
+> restart 하세요. 너무 빨리 하면 webhook이 CR을 아직 reconcile 하지 못해
+> 일부 pod에 init container가 주입되지 않을 수 있습니다.
+
+```bash
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 kubectl -n azure-otel rollout status   deploy azure-otel-spring --timeout=180s
 kubectl -n azure-otel rollout status   deploy azure-otel-python --timeout=180s
 kubectl -n azure-otel rollout status   deploy azure-otel-nodejs --timeout=180s
-
-# 확인 — 각 Pod에 opentelemetry-auto-instrumentation-{java|python|nodejs} init container가 보여야 함
-kubectl -n azure-otel get pods
 ```
+
+각 Pod에 `opentelemetry-auto-instrumentation-*` init container가 있는지 확인:
+
+```bash
+kubectl -n azure-otel get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.initContainers[*]}{.name}{", "}{end}{"\n"}{end}'
+```
+
+init container가 빠진 pod가 있으면 해당 deployment만 다시 restart 하세요.
 
 ### 3. 앱이 9464에서 메트릭을 노출하는지 확인
 
 서비스 이름만 바꿔 3번 반복:
 
-```powershell
+```bash
 # 터미널 1
 kubectl -n azure-otel port-forward deploy/azure-otel-spring 9464:9464
 
 # 터미널 2
-curl.exe -s http://localhost:9464/metrics | Select-String 'http_server' | Select-Object -First 5
+curl -s http://localhost:9464/metrics | grep 'http_server' | head -5
 ```
 
 `http_server_request_duration_seconds_bucket`, `process_*`, JVM의 경우
@@ -103,14 +112,14 @@ curl.exe -s http://localhost:9464/metrics | Select-String 'http_server' | Select
 
 ### 4. PodMonitor 적용
 
-```powershell
+```bash
 kubectl apply -f manifests/podmonitor.yaml
 kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
 ```
 
 > CRD를 새로 만든 직후라면 ama-metrics를 한 번 재시작해 주는 것이 빠릅니다:
 >
-> ```powershell
+> ```bash
 > kubectl -n kube-system rollout restart deploy/ama-metrics
 > ```
 
@@ -123,19 +132,33 @@ kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
 
 #### A. AMW Prometheus endpoint를 직접 질의 (가장 정확)
 
-```powershell
-$amwUrl = (az monitor account show -g (azd env get-value AZURE_RESOURCE_GROUP) `
-            -n (azd env get-value AZURE_MONITOR_WORKSPACE_NAME) `
-            --query metrics.prometheusQueryEndpoint -o tsv)
-$amwTok = (az account get-access-token --resource https://prometheus.monitor.azure.com `
-            --query accessToken -o tsv)
-curl.exe -sS -H "Authorization: Bearer $amwTok" `
+> `azd env get-value`는 `azure.yaml`이 있는 `01_deploy_to_aks` 디렉토리가
+> 필요합니다. `--cwd` 플래그로 `cd` 없이 참조할 수 있습니다.
+
+```bash
+amwUrl=$(az monitor account show \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" \
+  --query metrics.prometheusQueryEndpoint -o tsv)
+amwTok=$(az account get-access-token \
+  --resource https://prometheus.monitor.azure.com \
+  --query accessToken -o tsv)
+curl -sS -H "Authorization: Bearer $amwTok" \
   "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)"
 ```
 
 `{"service":"nodejs"}`, `python`, `spring` 세 개가 나오면 파이프라인 OK.
 
 #### B. Managed Grafana → AMW 경로 확인
+
+Grafana 포털 주소 확인:
+
+```bash
+az grafana show \
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+  --query properties.endpoint -o tsv
+```
 
 Managed Grafana → Explore → 데이터 소스: **Managed_Prometheus_<amw-name>**
 
@@ -148,14 +171,18 @@ sum by (service) (rate(http_server_request_duration_seconds_count[5m]))
 > AMG의 system-assigned MI에 `Monitoring Data Reader` 역할이 AMW에
 > 없거나 (5명 ~ 수 분) AAD propagation 대기입니다.
 >
-> ```powershell
-> $mi    = az grafana show -n (azd env get-value GRAFANA_NAME) `
->            -g (azd env get-value AZURE_RESOURCE_GROUP) --query identity.principalId -o tsv
-> $amwId = az monitor account show -n (azd env get-value AZURE_MONITOR_WORKSPACE_NAME) `
->            -g (azd env get-value AZURE_RESOURCE_GROUP) --query id -o tsv
-> az role assignment create --assignee-object-id $mi `
->   --assignee-principal-type ServicePrincipal `
->   --role 'Monitoring Data Reader' --scope $amwId
+> ```bash
+> mi=$(az grafana show \
+>   -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" \
+>   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+>   --query identity.principalId -o tsv)
+> amwId=$(az monitor account show \
+>   -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" \
+>   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
+>   --query id -o tsv)
+> az role assignment create --assignee-object-id "$mi" \
+>   --assignee-principal-type ServicePrincipal \
+>   --role 'Monitoring Data Reader' --scope "$amwId"
 > ```
 
 ### 6. Grafana 대시보드 import (Node / Python / Spring)
@@ -172,23 +199,20 @@ Managed Grafana 콘솔에서:
 
 <details><summary>CLI로 import (선택)</summary>
 
-```powershell
-$grafana = (azd env get-value GRAFANA_ENDPOINT)
+```bash
+grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
 # Azure Managed Grafana용 audience (고정 GUID)
-$token   = az account get-access-token --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
-              --query accessToken -o tsv
-$enc = New-Object Text.UTF8Encoding $false   # PS5 BOM 회피필수
-foreach ($f in 'dashboards/nodejs.json','dashboards/python.json','dashboards/spring.json') {
-  $dash = Get-Content $f -Raw | ConvertFrom-Json
-  $dash | Add-Member -NotePropertyName id -NotePropertyValue $null -Force
-  $body = @{ dashboard = $dash; overwrite = $true; folderId = 0 } | ConvertTo-Json -Depth 100
-  [IO.File]::WriteAllText("$PWD\body.json", $body, $enc)
-  curl.exe -sS -X POST "$grafana/api/dashboards/db" `
-    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' `
-    --data-binary '@body.json'
-  ''
-}
-Remove-Item body.json
+token=$(az account get-access-token \
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f \
+  --query accessToken -o tsv)
+for f in dashboards/nodejs.json dashboards/python.json dashboards/spring.json; do
+  jq '{dashboard: (. | .id = null), overwrite: true, folderId: 0}' "$f" > body.json
+  curl -sS -X POST "$grafana/api/dashboards/db" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    --data-binary @body.json
+  echo
+done
+rm -f body.json
 ```
 
 </details>
@@ -219,6 +243,11 @@ Remove-Item body.json
 | `:9464` 응답 없음 | SDK가 prometheus exporter를 못 켰거나 포트 충돌. `kubectl logs <pod> -c spring \| grep -i prometheus` |
 | Grafana에 메트릭 없음 | ama-metrics가 PodMonitor CRD를 아직 못 봤을 수 있음. `kubectl -n kube-system rollout restart deploy/ama-metrics` |
 | `http_response_status_code` label이 없음 | OTel SDK 버전에 따라 `http_status_code` 등 다른 이름. 패널 PromQL의 label 이름을 실제 노출되는 라벨로 교체 |
+| AMW 쿼리 403 `Data collection endpoint must be used…` | AMPLS / Private Link가 활성인데 `configurationAccessEndpoint` DCRA(DCE → AKS 연결)가 없음. ama-metrics가 scrape 설정을 받아오지 못함. `az monitor data-collection rule association create --name configurationAccessEndpoint --resource <aksId> --data-collection-endpoint-id <dceId>`로 생성. [01_deploy_to_aks/README](../01_deploy_to_aks/README_KR.md)의 AMPLS 섹션 참조. |
+| Grafana 401 / `Authentication to data source failed` | Managed Grafana의 system-assigned MI에 AMW에 대한 `Monitoring Data Reader` 역할이 없음. 5·B 단계의 role assignment 명령 실행 후 AAD 전파까지 몇 분 대기. |
+| `azd env get-value` 빈 값 / `no project exists` | `azure.yaml`이 있는 `01_deploy_to_aks/` 디렉토리에서 실행하지 않았음. `cd`로 이동하거나 `--cwd ../01_deploy_to_aks`를 추가. |
+| 대시보드 패널이 전부 Azure Monitor로 표시 | JSON의 datasource UID가 현재 Grafana 인스턴스와 불일치. 대시보드는 `${datasource}` 변수를 사용하므로 import 후 상단 **Prometheus** 드롭다운에서 `Managed_Prometheus_<amw-name>`을 선택. |
+| CR 적용했는데 init container가 안 붙음 | Race condition — `kubectl apply -f instrumentation.yaml` 직후 바로 restart하면 webhook이 아직 CR을 reconcile하지 못함. ~10초 대기 후 해당 deployment만 다시 restart. |
 
 ## 다음 단계
 

@@ -7,14 +7,18 @@ infra:
   module: main
 hooks:
   preprovision:
+    shell: sh
+    run: ./infra/hooks/preprovision.sh
+    interactive: true
+    continueOnError: false
     windows:
       shell: pwsh
       run: ./infra/hooks/preprovision.ps1
-      interactive: true
-      continueOnError: false
   postprovision:
+    shell: sh
+    run: ./infra/hooks/postprovision.sh
+    interactive: true
+    continueOnError: false
     windows:
       shell: pwsh
       run: ./infra/hooks/postprovision.ps1
-      interactive: true
-      continueOnError: false
