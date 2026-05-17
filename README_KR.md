@@ -5,12 +5,15 @@
 AKS 위에서 동작하는 multi-language 애플리케이션을 **Azure Monitor + OpenTelemetry**
 스택으로 관측하는 방식의 **표준 패턴을 실험·정리**하는 레포입니다.
 
-다음 네 가지 주제를 단계별로 다룹니다:
+다음 주제를 단계별로 다룹니다:
 
 1. **AKS + 모니터링 인프라 프로비저닝** (Bicep + azd)
 2. **메트릭만 먼저** — SDK Prometheus exporter + AKS managed Prometheus + Grafana
 3. **OTLP 표준화** — OpenTelemetry Collector로 traces는 App Insights, metrics는
    AMA scrape, 모든 인입은 AMPLS Private Endpoint 경유
+3-1. **AKS Auto-Instrumentation (Preview)** — 3단계의 대안으로 AKS 네이티브
+   `monitor.azure.com/v1` Instrumentation CR 사용, Collector 불필요.
+   텔레메트리가 Application Insights로 직접 전송.
 4. **연속 프로파일링 (Java)** — Grafana Pyroscope + Pyroscope Java agent 를
    strategic-merge patch 로 Spring pod 에 사이드컬 `-javaagent` 주입,
    앱 코드 무수정
@@ -51,6 +54,14 @@ SDK는 OTLP/gRPC만 쓰고 클러스터 안의 OTel Collector 가 분기:
 - **metrics** → `prometheus` exporter → ama-metrics scrape → AMW → Grafana
 
 02단계 대시보드는 그대로 재사용 (라벨 매핑은 collector 의 `transform` 프로세서가 처리).
+
+### [`03_1_aks_auto_instrumentation/`](./03_1_aks_auto_instrumentation)
+03단계의 **대안**으로 AKS 네이티브 auto-instrumentation preview
+(`AzureMonitorAppMonitoringPreview`) 를 사용합니다. AKS 가 관리하는
+`monitor.azure.com/v1` Instrumentation CR 이 Azure Monitor distro 를 직접 주입하므로
+OTel Collector 가 필요 없습니다. traces · requests · dependencies 가 Application
+Insights 로 바로 전송됩니다. App Insights 가 유일한 백엔드일 때 적합하며,
+02단계 PromQL 대시보드에는 데이터가 들어오지 않습니다 (App Insights 빌트인 화면 사용).
 
 ### [`04_profiling_with_pyroscope/`](./04_profiling_with_pyroscope)
 세 번째 OTel 시그널 **profiling** 을 **Spring 서비스 한정** 으로
@@ -104,6 +115,9 @@ kubectl apply -f ..\02_metrics_via_podmonitor\manifests\
 # 3. OTLP / Collector 로 전환
 cd ..\
 # 02단계 산출물 정리 후 03_otel_observability/README.md 따라 진행
+
+# 3-1. (대안) AKS 네이티브 auto-instrumentation
+# 03 대신 03_1_aks_auto_instrumentation/README_KR.md 따라 진행
 
 # 4. 연속 프로파일링 (Pyroscope + Alloy eBPF)
 # 04_profiling_with_pyroscope/README.md 따라 진행

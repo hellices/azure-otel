@@ -1,0 +1,23 @@
+# Strategic-merge patch: switch the Python deployment from OTel Operator's
+# inject-python annotation (which is not supported in AKS auto-instrumentation
+# public preview) to the limited-preview Python annotation.
+#
+# Apply with:
+#   kubectl patch deploy azure-otel-python -n azure-otel --type merge --patch-file manifests/python-patch.yaml
+#
+# If you do NOT have access to the Python limited preview, remove this patch
+# and accept that the Python app will not receive auto-instrumentation.
+# Alternatively, keep the OTel Operator Instrumentation CR for Python only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-otel-python
+  namespace: azure-otel
+spec:
+  template:
+    metadata:
+      annotations:
+        # Disable the standard inject-python (OTel Operator / AKS GA).
+        instrumentation.opentelemetry.io/inject-python: "false"
+        # Enable AKS limited-preview Python auto-instrumentation.
+        instrumentation.opentelemetry.io/private-preview-inject-python: "azure-otel"

@@ -4,13 +4,16 @@ A reference repo for **monitoring AKS-hosted applications with Azure Monitor +
 OpenTelemetry**. The goal is to experiment with and codify a standard pattern
 for end-to-end observability on Azure.
 
-The work is split into four numbered stages, each building on the previous one:
+The work is split into numbered stages, each building on the previous one:
 
 1. **Provision AKS + monitoring infra** (Bicep + azd)
 2. **Metrics first** — SDK Prometheus exporter + AKS managed Prometheus + Grafana
 3. **Standardize on OTLP** — OpenTelemetry Collector sending traces to
    Application Insights and metrics to AMW (scraped by ama-metrics), with all
    ingest paths going through AMPLS Private Endpoints.
+3-1. **AKS Auto-Instrumentation (Preview)** — alternative to stage 3 using
+   the AKS-native `monitor.azure.com/v1` Instrumentation CR, no Collector
+   required. Telemetry goes directly to Application Insights.
 4. **Continuous profiling (Java)** — Grafana Pyroscope + Pyroscope Java
    agent injected as a sidecar `-javaagent` into the Spring pod, no app
    change.
@@ -53,6 +56,14 @@ signal:
 
 Stage 02 dashboards keep working — the collector's `transform` processor maps
 OTel resource attributes back to the Prometheus labels the dashboards expect.
+
+### [`03_1_aks_auto_instrumentation/`](./03_1_aks_auto_instrumentation)
+An **alternative** to stage 03 that uses the AKS-native auto-instrumentation
+preview (`AzureMonitorAppMonitoringPreview`). The AKS-managed `monitor.azure.com/v1`
+Instrumentation CR injects the Azure Monitor distro directly — no OTel Collector
+needed. Traces, requests, and dependencies go straight to Application Insights.
+Ideal when App Insights is the sole observability backend; stage 02 PromQL
+dashboards will not receive data (use App Insights built-in blades instead).
 
 ### [`04_profiling_with_pyroscope/`](./04_profiling_with_pyroscope)
 Adds the third OTel signal — **profiling** — for the Spring service only.
@@ -109,6 +120,9 @@ kubectl apply -f ..\02_metrics_via_podmonitor\manifests\
 # 3. Switch to OTLP via the Collector
 cd ..\
 # Tear down stage 02 outputs and follow 03_otel_observability/README.md
+
+# 3-1. (Alternative) AKS-native auto-instrumentation
+# Follow 03_1_aks_auto_instrumentation/README.md instead of step 3
 
 # 4. Continuous profiling (Pyroscope + Alloy eBPF)
 # Follow 04_profiling_with_pyroscope/README.md

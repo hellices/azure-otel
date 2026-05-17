@@ -1,0 +1,36 @@
+# 03_1_aks_auto_instrumentation — AKS-managed auto-instrumentation (Preview).
+#
+# Replaces the OTel Operator Instrumentation CR (opentelemetry.io/v1alpha1) and
+# the OTel Collector from step 03 with an AKS-native auto-instrumentation CR
+# (monitor.azure.com/v1). AKS injects the Azure Monitor OpenTelemetry Distro
+# into pods and routes telemetry to Application Insights via the Azure Monitor
+# Agent (AMA) — no separate collector deployment needed.
+#
+# Supported auto-instrumentation languages (public preview):
+#   - Java   (inject-java)
+#   - Node.js (inject-nodejs)
+#
+# Python is in limited preview and requires a separate private-preview annotation:
+#   instrumentation.opentelemetry.io/private-preview-inject-python
+# See python-patch.yaml for the deployment patch.
+#
+# Docs:
+#   https://learn.microsoft.com/azure/azure-monitor/containers/kubernetes-open-protocol
+#   https://learn.microsoft.com/azure/azure-monitor/containers/kubernetes-codeless
+apiVersion: monitor.azure.com/v1
+kind: Instrumentation
+metadata:
+  name: azure-otel
+  namespace: azure-otel
+spec:
+  settings:
+    # Languages to auto-instrument namespace-wide.
+    # Per-deployment annotations (inject-java / inject-nodejs) override this.
+    autoInstrumentationPlatforms:
+      - Java
+      - NodeJs
+  destination:
+    # Replace with the actual connection string from your Application Insights
+    # resource. Retrieve it with:
+    #   azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks
+    applicationInsightsConnectionString: "${APPLICATION_INSIGHTS_CONNECTION_STRING}"
