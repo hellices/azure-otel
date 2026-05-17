@@ -1,0 +1,56 @@
+# Helm values for opencost/opencost on AKS.
+#
+# Install:
+#   helm repo add opencost https://opencost.github.io/opencost-helm-chart
+#   helm upgrade --install opencost opencost/opencost \
+#     -n opencost --create-namespace \
+#     -f 07_opencost/manifests/opencost-values.yaml
+#
+# OpenCost needs a Prometheus-compatible query endpoint for resource usage.
+# On AKS with Azure Managed Prometheus (AMW), direct query requires Azure AD
+# auth. The simplest approach is to set up a lightweight in-cluster Prometheus
+# (see README) or point at the AMW query endpoint via oauth2-proxy.
+#
+# For Azure pricing, create a service principal with billing read access
+# and mount the credentials as a secret (see README step 2).
+
+opencost:
+  exporter:
+    defaultClusterId: "azure-otel-aks"
+    # Azure cloud integration
+    cloudCost:
+      enabled: true
+
+    # Point at in-cluster Prometheus (see README for setup)
+    prometheus:
+      external:
+        enabled: true
+        url: "http://prometheus-server.prometheus-system.svc.cluster.local"
+
+    # Azure pricing provider
+    cloudProviderApiKey: ""
+    customPricing:
+      enabled: false
+
+    # Resources
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+  ui:
+    enabled: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  metrics:
+    serviceMonitor:
+      enabled: false  # AMA does not use ServiceMonitor; use PodMonitor below

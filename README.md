@@ -89,6 +89,25 @@ OTel's native profiles signal is still in Development as of 2026-05.
 > replacing the SDK injection entirely) and how to coexist with the
 > Cilium dataplane and the stage-04 Pyroscope agent on the same nodes.
 
+### [`06_hubble_network_observability/`](./06_hubble_network_observability)
+Enables **Cilium Hubble** via Azure Advanced Container Networking Services
+(ACNS). Since stage 01 already deploys Cilium as the data plane, a single
+`az aks update --enable-acns` unlocks L3/L4/L7 flow visibility, DNS
+monitoring, and packet-drop analysis. Hubble metrics are auto-scraped by
+ama-metrics — no PodMonitor needed.
+
+### [`07_opencost/`](./07_opencost)
+**OpenCost** (CNCF Graduated) for per-pod / per-namespace cost allocation.
+Combines Kubernetes resource usage with Azure billing data. Includes a
+lightweight in-cluster Prometheus, OpenCost UI, and a Grafana dashboard.
+
+### [`08_slo_monitoring/`](./08_slo_monitoring)
+Defines **Service Level Objectives** using [Sloth](https://sloth.dev/) on
+top of the RED metrics from stage 02. Generates multi-window multi-burn-rate
+recording rules and alerts following the Google SRE workbook pattern.
+Answers "are we on track for 99.9% this month?" instead of just "what is
+the current error rate?"
+
 ## Architecture
 
 ```
@@ -133,5 +152,5 @@ Each stage README has the exact commands and verification steps.
 ## Tech used
 
 - **Compute / network**: AKS (Azure CNI overlay + Cilium), AGFC (Gateway API), VNet, Private Endpoint
-- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS, Grafana Pyroscope (Java agent)
+- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS, Grafana Pyroscope (Java agent), Cilium Hubble (ACNS), OpenCost, Sloth (SLO)
 - **Build / deploy**: Bicep, Azure Developer CLI (azd), Helm, GitHub Container Registry

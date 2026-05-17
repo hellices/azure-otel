@@ -1,0 +1,114 @@
+# Sloth SLO definitions for the azure-otel sample apps.
+#
+# Generate Prometheus recording + alert rules:
+#   sloth generate -i 08_slo_monitoring/manifests/slo.yaml \
+#     -o 08_slo_monitoring/manifests/generated-rules.yaml
+#
+# Then apply:
+#   kubectl apply -f 08_slo_monitoring/manifests/generated-rules.yaml
+#
+# Metrics reference (from step 02 PodMonitor):
+#   http_request_duration_seconds_count{service, code, method}
+#   http_request_duration_seconds_bucket{service, code, method, le}
+
+version: "prometheus/v1"
+service: "azure-otel-apps"
+labels:
+  owner: "platform-team"
+  repo: "azure-otel"
+slos:
+  # ── HTTP availability ──────────────────────────────────────────
+  # "99.9% of requests return a non-5xx response"
+  - name: "http-availability"
+    objective: 99.9
+    description: "HTTP request success rate (non-5xx)"
+    sli:
+      events:
+        error_query: >
+          sum(rate(http_request_duration_seconds_count{
+            namespace="azure-otel",
+            code=~"5.."
+          }[{{.window}}]))
+        total_query: >
+          sum(rate(http_request_duration_seconds_count{
+            namespace="azure-otel"
+          }[{{.window}}]))
+    alerting:
+      name: "HTTPHighErrorRate"
+      labels:
+        category: availability
+      annotations:
+        summary: "High HTTP 5xx error rate — SLO burn rate exceeded"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ── HTTP latency ────────────────────────────────────────────────
+  # "99% of requests complete in under 500ms"
+  - name: "http-latency-p99"
+    objective: 99
+    description: "99th percentile HTTP latency under 500ms"
+    sli:
+      events:
+        error_query: >
+          (
+            sum(rate(http_request_duration_seconds_count{
+              namespace="azure-otel"
+            }[{{.window}}]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{
+              namespace="azure-otel",
+              le="0.5"
+            }[{{.window}}]))
+          )
+        total_query: >
+          sum(rate(http_request_duration_seconds_count{
+            namespace="azure-otel"
+          }[{{.window}}]))
+    alerting:
+      name: "HTTPHighLatency"
+      labels:
+        category: latency
+      annotations:
+        summary: "p99 latency exceeds 500ms — SLO burn rate exceeded"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning
+
+  # ── Per-service availability ────────────────────────────────────
+  # Individual SLO for the Spring backend (most likely to degrade)
+  - name: "spring-availability"
+    objective: 99.5
+    description: "Spring backend HTTP success rate"
+    sli:
+      events:
+        error_query: >
+          sum(rate(http_request_duration_seconds_count{
+            namespace="azure-otel",
+            service="spring",
+            code=~"5.."
+          }[{{.window}}]))
+        total_query: >
+          sum(rate(http_request_duration_seconds_count{
+            namespace="azure-otel",
+            service="spring"
+          }[{{.window}}]))
+    alerting:
+      name: "SpringHighErrorRate"
+      labels:
+        category: availability
+        service: spring
+      annotations:
+        summary: "Spring backend 5xx rate — SLO burn rate exceeded"
+      page_alert:
+        labels:
+          severity: critical
+      ticket_alert:
+        labels:
+          severity: warning

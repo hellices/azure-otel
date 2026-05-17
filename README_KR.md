@@ -84,6 +84,24 @@ profiles 시그널은 2026-05 기준 Development 단계.
 > 두 가지, 그리고 Cilium 데이터플레인 · 04 Pyroscope agent 와
 > 같은 노드에서 공존시키는 방법이 README 에 정리되어 있습니다.
 
+### [`06_hubble_network_observability/`](./06_hubble_network_observability)
+Azure ACNS(Advanced Container Networking Services) 를 활성화하여
+**Cilium Hubble** 네트워크 관측성을 추가합니다. 01단계에서 Cilium 데이터플레인이
+이미 배포되어 있으므로 `az aks update --enable-acns` 한 줄로 L3/L4/L7 플로우
+가시성, DNS 모니터링, 패킷 드롭 분석이 가능합니다. Hubble 메트릭은 ama-metrics 가
+자동 스크레이프합니다.
+
+### [`07_opencost/`](./07_opencost)
+**OpenCost** (CNCF Graduated) 로 Pod · 네임스페이스별 비용 할당을 추적합니다.
+Kubernetes 리소스 사용량과 Azure 과금 데이터를 결합하여 서비스 시간당 비용을
+보여줍니다.
+
+### [`08_slo_monitoring/`](./08_slo_monitoring)
+02단계의 RED 메트릭 위에 [Sloth](https://sloth.dev/) 로 **SLO** 를 정의합니다.
+Google SRE Workbook 패턴의 multi-window multi-burn-rate recording rules +
+alert 를 자동 생성합니다. "지금 에러율이 얼마야?" 가 아닌 "이번 달 99.9% 목표를
+지킬 수 있을까?" 에 답합니다.
+
 ## 전체 아키텍처
 
 ```
@@ -128,5 +146,5 @@ cd ..\
 ## 사용 기술
 
 - **Compute / Network**: AKS (Azure CNI overlay + Cilium), AGFC (Gateway API), VNet, Private Endpoint
-- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS, Grafana Pyroscope (Java agent)
+- **Observability**: OpenTelemetry SDK / Operator / Collector, Application Insights, Azure Monitor Workspace (managed Prometheus), Azure Managed Grafana, AMPLS, Grafana Pyroscope (Java agent), Cilium Hubble (ACNS), OpenCost, Sloth (SLO)
 - **Build / Deploy**: Bicep, Azure Developer CLI (azd), Helm, GitHub Container Registry
