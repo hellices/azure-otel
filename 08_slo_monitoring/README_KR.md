@@ -18,14 +18,18 @@ multi-window multi-burn-rate alert를 자동 생성합니다.
 
 | SLO | 목표 | SLI (나쁜 이벤트) |
 |---|---|---|
-| `http-availability` | 99.9% | 전체 서비스 HTTP 5xx |
-| `http-latency-p99` | 99% | 500ms 초과 요청 |
+| `http-availability` | 99.9% | 전체 서비스 HTTP 5xx (Node.js/Python + Spring 메트릭 결합) |
+| `http-latency-p99` | 99% | 500ms 초과 요청 (Node.js + Python만, 밀리초 메트릭) |
 | `spring-availability` | 99.5% | Spring 백엔드 HTTP 5xx |
 
 ## 사전 요구 사항
 
 - 01 + 02단계 실행 중 (Prometheus 메트릭 수집 중).
-- Sloth CLI 설치: `brew install slok/sloth/sloth`
+- Sloth CLI 설치 (brew tap 사용 불가, 바이너리 직접 다운로드):
+  ```bash
+  curl -sSL https://github.com/slok/sloth/releases/latest/download/sloth-darwin-arm64 \
+    -o /usr/local/bin/sloth && chmod +x /usr/local/bin/sloth
+  ```
 
 ## 1. 규칙 생성
 

@@ -67,6 +67,12 @@ helm uninstall prometheus -n prometheus-system
 kubectl delete ns opencost prometheus-system
 ```
 
+<!-- DEBUG: HTTPRoute 트러블슈팅
+  Gateway의 allowedRoutes.namespaces.from이 "Same"이면
+  다른 네임스페이스의 HTTPRoute가 거부됩니다.
+  해결: httproute.yaml에 ReferenceGrant + HTTPRoute를 azure-otel NS에 배포.
+  확인: kubectl get httproute -A -o wide (Accepted/Programmed 확인) -->
+
 ## 참고
 
 - [OpenCost 문서](https://www.opencost.io/docs/)

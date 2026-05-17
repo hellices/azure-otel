@@ -13,6 +13,12 @@
 #
 # For Azure pricing, create a service principal with billing read access
 # and mount the credentials as a secret (see README step 2).
+#
+# DEBUG: Verify OpenCost can reach Prometheus:
+#   kubectl -n opencost logs deploy/opencost -c opencost | grep -i "prometheus\|error"
+# DEBUG: Verify cost data:
+#   kubectl -n opencost port-forward svc/opencost 9003:9003
+#   curl 'http://localhost:9003/allocation/compute?window=10m&aggregate=namespace'
 
 opencost:
   exporter:

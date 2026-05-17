@@ -20,15 +20,19 @@ observability layer on top of it.
     │                  ▼   ▼                                      │
     │          cilium-agent (eBPF)                                 │
     │                  │                                          │
-    │    hubble_* metrics (:9965)    flow logs                    │
+    │         hubble flow logs     gRPC metrics (:9965)           │
     │           │                      │                          │
     └───────────┼──────────────────────┼──────────────────────────┘
                 │                      │
-         ama-metrics scrape       hubble observe
-                │
-                ▼
-     Azure Managed Prometheus  ──►  Azure Managed Grafana
+        hubble observe            Prometheus scrape
+        (via cilium-agent)        (gRPC server stats)
 ```
+
+> **Note**: ACNS enables Hubble **flow observation** (the `hubble observe`
+> command), but does NOT automatically enable `hubble_*` Prometheus metrics
+> like `hubble_flows_processed_total` or `hubble_dns_responses_total`.
+> The `hubble-metrics` config key is empty by default on AKS.
+> Port 9965 exposes gRPC server stats only.
 
 ## What Hubble shows
 
@@ -64,58 +68,103 @@ az aks update \
 ```
 
 This enables:
-- **Container Network Observability** — Hubble metrics + flow logs.
+- **Container Network Observability** — Hubble flow logs via `hubble observe`.
 - **Container Network Security** — FQDN filtering, TLS inspection, mTLS (optional).
-- Hubble metrics are **automatically scraped** by ama-metrics — no PodMonitor needed.
 
 ## 2. Verify Hubble is running
 
 ```bash
-# Check cilium-agent pods are updated
+# Check cilium-agent pods are updated (should show 3/3 Running)
 kubectl -n kube-system get pods -l k8s-app=cilium -o wide
 
 # Verify Hubble is enabled in cilium config
 kubectl -n kube-system get cm cilium-config -o jsonpath='{.data.enable-hubble}'
 # Should output: true
+
+# Verify Hubble Relay is running (service port 443 → container port 4245)
+kubectl -n kube-system get svc hubble-relay
+kubectl -n kube-system get pods -l k8s-app=hubble-relay
 ```
 
-## 3. Install the Hubble CLI and observe flows
+<!-- DEBUG: If cilium pods aren't restarting after --enable-acns,
+     the ACNS feature may still be rolling out. Wait 2-3 min.
+     Check: az aks show -g $RG -n $AKS \
+       -\-query "networkProfile.advancedNetworking" -o json -->
+
+## 3. Observe flows (recommended: via cilium-agent exec)
+
+The simplest way to observe flows on AKS — no TLS certs needed:
 
 ```bash
-# macOS
-brew install hubble
-
-# Port-forward Hubble Relay
-kubectl -n kube-system port-forward svc/hubble-relay 4245:80 &
-
-# Check status
-hubble status --server localhost:4245
+# Pick any cilium-agent pod
+CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
+  -o jsonpath='{.items[0].metadata.name}')
 
 # Observe all flows in the azure-otel namespace
-hubble observe --server localhost:4245 -n azure-otel
+kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+  hubble observe -n azure-otel --last 20
 
-# Filter: only HTTP flows
-hubble observe --server localhost:4245 -n azure-otel --protocol http
-
-# Filter: only DNS queries
-hubble observe --server localhost:4245 -n azure-otel --type l7 --protocol dns
-
-# Filter: dropped packets only
-hubble observe --server localhost:4245 -n azure-otel --verdict DROPPED
+# Filter: only dropped packets
+kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+  hubble observe -n azure-otel --verdict DROPPED
 ```
+
+<!-- DEBUG: If "hubble observe" returns nothing, generate traffic first (step 4)
+     or check if the cilium-agent has finished restarting. -->
+
+### 3b. (Alternative) Local hubble CLI with TLS certs
+
+Hubble Relay uses **mTLS**. To connect from your machine:
+
+```bash
+brew install hubble
+
+# Extract client TLS certs from the cluster
+mkdir -p /tmp/hubble-tls
+kubectl -n kube-system get secret hubble-relay-client-certs \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/hubble-tls/ca.crt
+kubectl -n kube-system get secret hubble-relay-client-certs \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/hubble-tls/tls.crt
+kubectl -n kube-system get secret hubble-relay-client-certs \
+  -o jsonpath='{.data.tls\.key}' | base64 -d > /tmp/hubble-tls/tls.key
+
+# Port-forward to the relay pod (not svc — avoids port mapping issues)
+RELAY_POD=$(kubectl -n kube-system get pods -l k8s-app=hubble-relay \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl -n kube-system port-forward "pod/$RELAY_POD" 4245:4245 &
+
+# Connect with TLS
+hubble observe --server localhost:4245 \
+  --tls --tls-ca-cert-files /tmp/hubble-tls/ca.crt \
+  --tls-client-cert-file /tmp/hubble-tls/tls.crt \
+  --tls-client-key-file /tmp/hubble-tls/tls.key \
+  --tls-server-name "*.hubble-relay.cilium.io" \
+  -n azure-otel
+```
+
+<!-- DEBUG: If "DeadlineExceeded" on hubble status/observe with TLS certs,
+     verify openssl handshake works first:
+       openssl s_client -connect localhost:4245 \
+         -cert /tmp/hubble-tls/tls.crt -key /tmp/hubble-tls/tls.key \
+         -CAfile /tmp/hubble-tls/ca.crt \
+         -servername "*.hubble-relay.cilium.io" </dev/null
+     If TLS handshake succeeds but gRPC fails, it's a hubble CLI version
+     compatibility issue. Use the cilium-agent exec method instead. -->
 
 ## 4. Generate traffic and explore
 
 ```bash
-AGFC=$(azd env get-value AGFC_URL --cwd ../01_deploy_to_aks 2>/dev/null || \
-       kubectl get gateway azure-otel-gateway -n azure-otel \
-         -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
+  -o jsonpath='{.status.addresses[0].value}')
 
 # Generate cross-service traffic
 for i in $(seq 1 30); do curl -s "http://${AGFC}/api/items" > /dev/null; done
 
-# Watch the flows
-hubble observe --server localhost:4245 -n azure-otel --last 50
+# Watch the flows (via cilium-agent — simplest method)
+CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+  hubble observe -n azure-otel --last 50
 ```
 
 You should see the full call chain: `AGFC → nodejs → python → spring`,
@@ -123,8 +172,9 @@ with HTTP method, status codes, and latency for each hop.
 
 ## 5. Import Grafana dashboards
 
-ACNS integrates with Azure Managed Grafana automatically. Additionally, the
-Cilium community provides dashboards:
+ACNS integrates with Azure Managed Grafana for Container Network Observability.
+The Cilium community also provides dashboards (require `hubble-metrics` to be
+configured — see note below):
 
 | Dashboard | Grafana.com ID | Content |
 |---|---|---|
@@ -149,36 +199,42 @@ curl -sS "https://grafana.com/api/dashboards/16613/revisions/latest/download" \
     --data-binary @-
 ```
 
-## 6. Key Hubble metrics
+> **Note**: The community Hubble dashboards (16613 etc.) query `hubble_*`
+> Prometheus metrics that require the `hubble-metrics` config to list
+> specific collectors (e.g., `dns`, `drop`, `tcp`, `flow`, `http`).
+> On AKS with ACNS, this config is **empty by default** — only flow
+> observation via `hubble observe` works out of the box.
+> The dashboards will show empty panels unless you configure hubble-metrics
+> separately.
 
-All metrics are prefixed `hubble_` and scraped from port `9965`:
+## 6. Hubble diagnostic metrics
+
+The cilium-agent exposes Prometheus metrics on port `:9962`.
+Hubble-specific subsystem errors show up here:
 
 ```promql
-# HTTP request rate by source/destination
-sum by (source, destination) (rate(hubble_http_requests_total{namespace="azure-otel"}[5m]))
-
-# DNS query failures (NXDOMAIN, SERVFAIL)
-sum by (query, rcode) (rate(hubble_dns_responses_total{rcode!="No Error"}[5m]))
-
-# Packet drop rate by reason
-sum by (reason) (rate(hubble_drop_total[5m]))
-
-# TCP RST rate (connection issues)
-sum by (source, destination) (rate(hubble_tcp_flags_total{flag="RST"}[5m]))
+# Hubble subsystem errors (from cilium-agent :9962)
+cilium_errors_warnings_total{subsystem="hubble"}
 ```
+
+Port `:9965` is the Hubble gRPC metrics server (gRPC call stats only —
+not flow/DNS/drop metrics).
 
 ## 7. (Optional) Network policy auditing
 
 With ACNS enabled, Cilium network policies get richer:
 
 ```bash
+CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
+  -o jsonpath='{.items[0].metadata.name}')
+
 # See which flows are being denied by NetworkPolicy
-hubble observe --server localhost:4245 \
-  -n azure-otel --verdict DROPPED --type policy-verdict
+kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+  hubble observe -n azure-otel --verdict DROPPED --type policy-verdict
 
 # Export flows as JSON for audit
-hubble observe --server localhost:4245 \
-  -n azure-otel --output json > flows.json
+kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
+  hubble observe -n azure-otel --output json --last 100 > flows.json
 ```
 
 ## Cleanup

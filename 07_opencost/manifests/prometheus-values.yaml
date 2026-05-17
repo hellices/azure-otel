@@ -9,6 +9,13 @@
 # This is a lightweight Prometheus instance that only scrapes kubelet and
 # kube-state-metrics for OpenCost. It does NOT replace Azure Managed
 # Prometheus (AMA/AMW) — they coexist independently.
+#
+# DEBUG: Verify Prometheus is scraping targets:
+#   kubectl -n prometheus-system port-forward svc/prometheus-server 9090:80
+#   open http://localhost:9090/targets  (kubelet + kube-state-metrics should be UP)
+# DEBUG: If OpenCost shows $0 for everything, Prometheus can't reach kubelet.
+#   Check: curl localhost:9090/api/v1/query?query=container_cpu_usage_seconds_total
+#   If empty, check RBAC — the prometheus-server SA needs cluster-wide read.
 
 server:
   persistentVolume:

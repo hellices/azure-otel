@@ -35,27 +35,28 @@ SLO YAML ──► sloth generate ──► PrometheusRule YAML
 | **Output** | Dashboard panels | Error budget remaining, burn-rate alerts |
 | **Alerts** | Threshold-based (e.g., error rate > 5%) | Budget-based (e.g., burning 14× too fast) |
 
-SLO monitoring is built **on top of** RED metrics. This stage uses the same
-`http_request_duration_seconds_*` metrics from step 02 to define SLOs.
+SLO monitoring is built **on top of** RED metrics. This stage uses the
+OTel auto-instrumentation metrics from step 02:
+- Node.js / Python: `http_server_duration_milliseconds_count` (label: `http_status_code`)
+- Spring: `http_server_request_duration_seconds_count` (label: `http_response_status_code`)
 
 ## SLOs defined
 
 | SLO | Objective | SLI (bad events) |
 |---|---|---|
-| `http-availability` | 99.9% | HTTP 5xx responses across all services |
-| `http-latency-p99` | 99% | Requests slower than 500ms |
+| `http-availability` | 99.9% | HTTP 5xx responses across all services (combined metrics) |
+| `http-latency-p99` | 99% | Requests slower than 500ms (Node.js + Python only) |
 | `spring-availability` | 99.5% | HTTP 5xx from the Spring backend only |
 
 ## Prerequisites
 
-- Stages 01 + 02 running (Prometheus metrics flowing).
+- Stages 01 + 02 running (Prometheus metrics flowing via PodMonitor).
 - [Sloth CLI](https://github.com/slok/sloth/releases) installed:
   ```bash
-  # macOS
-  brew install slok/sloth/sloth
-  # or binary download
+  # Binary download (brew tap is no longer available)
   curl -sSL https://github.com/slok/sloth/releases/latest/download/sloth-darwin-arm64 \
     -o /usr/local/bin/sloth && chmod +x /usr/local/bin/sloth
+  sloth version
   ```
 
 ## 1. Review the SLO definitions
@@ -144,9 +145,8 @@ The dashboard shows:
 
 ```bash
 # Generate some traffic
-AGFC=$(azd env get-value AGFC_URL --cwd ../01_deploy_to_aks 2>/dev/null || \
-       kubectl get gateway azure-otel-gateway -n azure-otel \
-         -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
+  -o jsonpath='{.status.addresses[0].value}')
 
 for i in $(seq 1 50); do curl -s "http://${AGFC}/api/items" > /dev/null; done
 
@@ -156,6 +156,14 @@ for i in $(seq 1 50); do curl -s "http://${AGFC}/api/items" > /dev/null; done
 #   slo:error_budget:ratio{sloth_service="azure-otel-apps"}
 #   slo:current_burn_rate:ratio{sloth_service="azure-otel-apps"}
 ```
+
+<!-- DEBUG: If all SLIs return NaN:
+     1. Check that step 02 Instrumentation CR is applied and pods restarted.
+     2. Verify metrics flow: port-forward prometheus-server and query
+        http_server_duration_milliseconds_count or
+        http_server_request_duration_seconds_count.
+     3. If metrics exist but SLO labels don't match, check the PodMonitor
+        relabeling (the "service" label must be present). -->
 
 ## 6. Understanding the alerts
 

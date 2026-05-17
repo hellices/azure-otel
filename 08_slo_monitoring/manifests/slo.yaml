@@ -4,12 +4,21 @@
 #   sloth generate -i 08_slo_monitoring/manifests/slo.yaml \
 #     -o 08_slo_monitoring/manifests/generated-rules.yaml
 #
-# Then apply:
+# Then apply to in-cluster Prometheus (step 07):
 #   kubectl apply -f 08_slo_monitoring/manifests/generated-rules.yaml
 #
-# Metrics reference (from step 02 PodMonitor):
-#   http_request_duration_seconds_count{service, code, method}
-#   http_request_duration_seconds_bucket{service, code, method, le}
+# Metrics reference (from step 02 OTel auto-instrumentation + PodMonitor):
+#   Node.js / Python:
+#     http_server_duration_milliseconds_count{service, http_status_code, http_method}
+#     http_server_duration_milliseconds_bucket{service, http_status_code, http_method, le}
+#   Spring (Java):
+#     http_server_request_duration_seconds_count{service, http_response_status_code, http_route}
+#     http_server_request_duration_seconds_bucket{service, http_response_status_code, http_route, le}
+#
+# DEBUG: After generating, verify metric names match your cluster:
+#   kubectl port-forward -n prometheus-system svc/prometheus-server 9090:80
+#   curl -s 'http://localhost:9090/api/v1/label/__name__/values' | jq '.data[]' | grep http_server
+# DEBUG: If all SLIs return NaN, metrics aren't flowing — check PodMonitor + OTel Instrumentation CR.
 
 version: "prometheus/v1"
 service: "azure-otel-apps"
@@ -17,22 +26,40 @@ labels:
   owner: "platform-team"
   repo: "azure-otel"
 slos:
-  # ── HTTP availability ──────────────────────────────────────────
+  # ── HTTP availability (all services) ───────────────────────────
   # "99.9% of requests return a non-5xx response"
+  # Combines Node.js/Python (milliseconds metric) + Spring (seconds metric)
   - name: "http-availability"
     objective: 99.9
-    description: "HTTP request success rate (non-5xx)"
+    description: "HTTP request success rate (non-5xx) across all services"
     sli:
       events:
         error_query: >
-          sum(rate(http_request_duration_seconds_count{
-            namespace="azure-otel",
-            code=~"5.."
-          }[{{.window}}]))
+          (
+            sum(rate(http_server_duration_milliseconds_count{
+              namespace="azure-otel",
+              http_status_code=~"5.."
+            }[{{.window}}])) or vector(0)
+          )
+          +
+          (
+            sum(rate(http_server_request_duration_seconds_count{
+              namespace="azure-otel",
+              http_response_status_code=~"5.."
+            }[{{.window}}])) or vector(0)
+          )
         total_query: >
-          sum(rate(http_request_duration_seconds_count{
-            namespace="azure-otel"
-          }[{{.window}}]))
+          (
+            sum(rate(http_server_duration_milliseconds_count{
+              namespace="azure-otel"
+            }[{{.window}}])) or vector(0)
+          )
+          +
+          (
+            sum(rate(http_server_request_duration_seconds_count{
+              namespace="azure-otel"
+            }[{{.window}}])) or vector(0)
+          )
     alerting:
       name: "HTTPHighErrorRate"
       labels:
@@ -46,26 +73,28 @@ slos:
         labels:
           severity: warning
 
-  # ── HTTP latency ────────────────────────────────────────────────
+  # ── HTTP latency (Node.js + Python only) ────────────────────────
   # "99% of requests complete in under 500ms"
+  # Uses milliseconds metric; le="500" = 500ms threshold
+  # Spring uses a seconds metric (different unit), handled separately if needed
   - name: "http-latency-p99"
     objective: 99
-    description: "99th percentile HTTP latency under 500ms"
+    description: "99th percentile HTTP latency under 500ms (Node.js + Python)"
     sli:
       events:
         error_query: >
           (
-            sum(rate(http_request_duration_seconds_count{
+            sum(rate(http_server_duration_milliseconds_count{
               namespace="azure-otel"
             }[{{.window}}]))
             -
-            sum(rate(http_request_duration_seconds_bucket{
+            sum(rate(http_server_duration_milliseconds_bucket{
               namespace="azure-otel",
-              le="0.5"
+              le="500"
             }[{{.window}}]))
           )
         total_query: >
-          sum(rate(http_request_duration_seconds_count{
+          sum(rate(http_server_duration_milliseconds_count{
             namespace="azure-otel"
           }[{{.window}}]))
     alerting:
@@ -81,7 +110,7 @@ slos:
         labels:
           severity: warning
 
-  # ── Per-service availability ────────────────────────────────────
+  # ── Per-service: Spring backend availability ────────────────────
   # Individual SLO for the Spring backend (most likely to degrade)
   - name: "spring-availability"
     objective: 99.5
@@ -89,13 +118,13 @@ slos:
     sli:
       events:
         error_query: >
-          sum(rate(http_request_duration_seconds_count{
+          sum(rate(http_server_request_duration_seconds_count{
             namespace="azure-otel",
             service="spring",
-            code=~"5.."
+            http_response_status_code=~"5.."
           }[{{.window}}]))
         total_query: >
-          sum(rate(http_request_duration_seconds_count{
+          sum(rate(http_server_request_duration_seconds_count{
             namespace="azure-otel",
             service="spring"
           }[{{.window}}]))

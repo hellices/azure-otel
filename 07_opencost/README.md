@@ -128,8 +128,15 @@ open http://localhost:9090
 Or expose via AGFC (demo only — add auth for production):
 
 ```bash
+# HTTPRoute is in azure-otel namespace (same as Gateway).
+# Cross-namespace backend uses ReferenceGrant to reach opencost namespace.
 kubectl apply -f manifests/httproute.yaml
 ```
+
+<!-- DEBUG: If HTTPRoute shows "NotAllowedByListeners", the route is in the
+     wrong namespace. It must be in azure-otel (same as the Gateway).
+     Check: kubectl get httproute opencost -n azure-otel -o yaml
+     If "RefNotPermitted", the ReferenceGrant is missing in opencost ns. -->
 
 ## 5. Import Grafana dashboard
 
