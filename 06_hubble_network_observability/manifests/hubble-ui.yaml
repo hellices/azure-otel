@@ -59,7 +59,7 @@ data:
 
         location / {
             try_files $uri $uri/ /index.html;
-            sub_filter '<base href="/"' '<base href="/hubble/"';
+            sub_filter '<base href="/"' '<script>!function(){var p=location.pathname;if(p.startsWith("/hubble")){history.replaceState(null,"",p.replace(/^\\/hubble\\/?/,"/")+location.search+location.hash)}}()</script><base href="/hubble/"';
             sub_filter_once on;
             sub_filter_types text/html;
         }
