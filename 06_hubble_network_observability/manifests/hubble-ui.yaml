@@ -54,34 +54,21 @@ data:
     server {
         listen 8080;
         server_name localhost;
+        root /app;
+        index index.html;
 
-        location = /hubble {
-            return 301 /hubble/;
-        }
-
-        location /hubble/ {
-            alias /app/;
-            try_files $uri $uri/ /hubble/index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
             sub_filter '<base href="/"' '<base href="/hubble/"';
             sub_filter_once on;
             sub_filter_types text/html;
         }
 
-        location /hubble/api/ {
+        location /api/ {
             proxy_pass http://localhost:8090/api/;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
-        }
-
-        location = /healthz {
-            return 200 'ok';
-            add_header Content-Type text/plain;
-        }
-
-        location = / {
-            return 200 'ok';
-            add_header Content-Type text/plain;
         }
     }
 ---
