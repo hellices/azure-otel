@@ -96,7 +96,7 @@ Enables **Cilium Hubble** via Azure Advanced Container Networking Services
 monitoring, and packet-drop analysis. Includes **Hubble UI** exposed via
 AGFC gateway at `/hubble`.
 
-### [`08_slo_monitoring/`](./08_slo_monitoring)
+### [`07_slo_monitoring/`](./07_slo_monitoring)
 Defines **Service Level Objectives** using [Sloth](https://sloth.dev/) on
 top of the RED metrics from stage 02. Generates multi-window multi-burn-rate
 recording rules and alerts following the Google SRE workbook pattern.

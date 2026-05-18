@@ -1,11 +1,11 @@
 # Sloth SLO definitions for the azure-otel sample apps.
 #
 # Generate Prometheus recording + alert rules:
-#   sloth generate -i 08_slo_monitoring/manifests/slo.yaml \
-#     -o 08_slo_monitoring/manifests/generated-rules.yaml
+#   sloth generate -i 07_slo_monitoring/manifests/slo.yaml \
+#     -o 07_slo_monitoring/manifests/generated-rules.yaml
 #
 # Then apply to in-cluster Prometheus (step 07):
-#   kubectl apply -f 08_slo_monitoring/manifests/generated-rules.yaml
+#   kubectl apply -f 07_slo_monitoring/manifests/generated-rules.yaml
 #
 # Metrics reference (from step 02 OTel auto-instrumentation + PodMonitor):
 #   Node.js / Python:

@@ -40,12 +40,6 @@ spec:
         - path:
             type: PathPrefix
             value: /hubble
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplacePrefixMatch
-              replacePrefixMatch: /
       backendRefs:
         - name: hubble-ui
           namespace: kube-system

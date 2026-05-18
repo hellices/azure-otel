@@ -62,7 +62,7 @@ OTel auto-instrumentation metrics from step 02:
 ## 1. Review the SLO definitions
 
 ```bash
-cd 08_slo_monitoring    # from repo root
+cd 07_slo_monitoring    # from repo root
 cat manifests/slo.yaml
 ```
 

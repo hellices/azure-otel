@@ -34,7 +34,7 @@ multi-window multi-burn-rate alert를 자동 생성합니다.
 ## 1. 규칙 생성
 
 ```bash
-cd 08_slo_monitoring
+cd 07_slo_monitoring
 sloth generate -i manifests/slo.yaml -o manifests/generated-rules.yaml
 ```
 

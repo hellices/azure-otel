@@ -91,7 +91,7 @@ Azure ACNS(Advanced Container Networking Services) 를 활성화하여
 가시성, DNS 모니터링, 패킷 드롭 분석이 가능합니다. **Hubble UI**를 AGFC 게이트웨이
 `/hubble` 경로로 노출합니다.
 
-### [`08_slo_monitoring/`](./08_slo_monitoring)
+### [`07_slo_monitoring/`](./07_slo_monitoring)
 02단계의 RED 메트릭 위에 [Sloth](https://sloth.dev/) 로 **SLO** 를 정의합니다.
 Google SRE Workbook 패턴의 multi-window multi-burn-rate recording rules +
 alert 를 자동 생성합니다. "지금 에러율이 얼마야?" 가 아닌 "이번 달 99.9% 목표를
