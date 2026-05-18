@@ -1,0 +1,52 @@
+# HTTPRoute: expose Hubble UI via AGFC gateway at /hubble
+#
+# Gateway (azure-otel-gw) is in azure-otel namespace with
+# allowedRoutes.namespaces.from: "Same", so:
+#   - HTTPRoute must live in azure-otel namespace
+#   - ReferenceGrant in kube-system allows cross-namespace backendRef
+#
+# Access: http://<AGFC_IP>/hubble
+#
+# DEBUG: If route shows NotAllowedByListeners → HTTPRoute is in wrong namespace
+# DEBUG: If RefNotPermitted → ReferenceGrant missing or wrong namespace
+# DEBUG: Verify: kubectl get httproute hubble-ui -n azure-otel -o yaml
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-hubble-ui-from-azure-otel
+  namespace: kube-system
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: azure-otel
+  to:
+    - group: ""
+      kind: Service
+      name: hubble-ui
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hubble-ui
+  namespace: azure-otel
+spec:
+  parentRefs:
+    - name: azure-otel-gw
+      namespace: azure-otel
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /hubble
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: hubble-ui
+          namespace: kube-system
+          port: 80

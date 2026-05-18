@@ -59,7 +59,24 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
 > **참고**: Hubble Relay는 mTLS를 사용하므로 로컬 `hubble` CLI로 직접 접속하려면
 > TLS 인증서 추출이 필요합니다. 상세 방법은 [README.md](./README.md)의 3b 섹션을 참조하세요.
 
-## 4. Grafana 대시보드
+## 4. Hubble UI 배포
+
+웹 기반 플로우 시각화 UI를 배포하고 AGFC 게이트웨이(`/hubble`)로 노출합니다.
+
+```bash
+kubectl apply -f manifests/hubble-ui.yaml
+kubectl -n kube-system rollout status deploy/hubble-ui --timeout=90s
+
+# HTTPRoute로 게이트웨이 노출
+kubectl apply -f manifests/httproute.yaml
+
+# 접속
+AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
+  -o jsonpath='{.status.addresses[0].value}')
+echo "http://${AGFC}/hubble"
+```
+
+## 5. Grafana 대시보드
 
 > **주의**: ACNS가 hubble `hubble_*` Prometheus 메트릭을 자동 활성화하지 **않습니다**.
 > `hubble-metrics` 설정이 비어 있어, 커뮤니티 대시보드(16613)는 기본 상태에서 빈 패널을 보여줍니다.

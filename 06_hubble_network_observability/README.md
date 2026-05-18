@@ -170,7 +170,37 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
 You should see the full call chain: `AGFC → nodejs → python → spring`,
 with HTTP method, status codes, and latency for each hop.
 
-## 5. Import Grafana dashboards
+## 5. Deploy Hubble UI
+
+Hubble UI provides a web-based flow visualization. It connects to
+Hubble Relay using mTLS (certs from `hubble-relay-client-certs` secret).
+
+```bash
+kubectl apply -f manifests/hubble-ui.yaml
+kubectl -n kube-system rollout status deploy/hubble-ui --timeout=90s
+```
+
+Expose via AGFC gateway at `/hubble`:
+
+```bash
+kubectl apply -f manifests/httproute.yaml
+
+# Verify route is accepted
+kubectl get httproute hubble-ui -n azure-otel
+```
+
+Access:
+```bash
+AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
+  -o jsonpath='{.status.addresses[0].value}')
+echo "http://${AGFC}/hubble"
+```
+
+<!-- DEBUG: If 503 → AGFC health probe hasn't converged yet (wait 30s).
+     If 404 → nginx config not mounted (check ConfigMap hubble-ui-nginx).
+     If RefNotPermitted → ReferenceGrant missing in kube-system. -->
+
+## 6. Import Grafana dashboards
 
 ACNS integrates with Azure Managed Grafana for Container Network Observability.
 The Cilium community also provides dashboards (require `hubble-metrics` to be
@@ -207,7 +237,7 @@ curl -sS "https://grafana.com/api/dashboards/16613/revisions/latest/download" \
 > The dashboards will show empty panels unless you configure hubble-metrics
 > separately.
 
-## 6. Hubble diagnostic metrics
+## 7. Hubble diagnostic metrics
 
 The cilium-agent exposes Prometheus metrics on port `:9962`.
 Hubble-specific subsystem errors show up here:
@@ -220,7 +250,7 @@ cilium_errors_warnings_total{subsystem="hubble"}
 Port `:9965` is the Hubble gRPC metrics server (gRPC call stats only —
 not flow/DNS/drop metrics).
 
-## 7. (Optional) Network policy auditing
+## 8. (Optional) Network policy auditing
 
 With ACNS enabled, Cilium network policies get richer:
 
