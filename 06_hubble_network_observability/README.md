@@ -180,25 +180,16 @@ kubectl apply -f manifests/hubble-ui.yaml
 kubectl -n kube-system rollout status deploy/hubble-ui --timeout=90s
 ```
 
-Expose via AGFC gateway at `/hubble`:
+Access via port-forward:
 
 ```bash
-kubectl apply -f manifests/httproute.yaml
-
-# Verify route is accepted
-kubectl get httproute hubble-ui -n azure-otel
+kubectl -n kube-system port-forward svc/hubble-ui 12000:80
+# open http://localhost:12000
 ```
 
-Access:
-```bash
-AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
-  -o jsonpath='{.status.addresses[0].value}')
-echo "http://${AGFC}/hubble"
-```
-
-<!-- DEBUG: If 503 → AGFC health probe hasn't converged yet (wait 30s).
-     If 404 → nginx config not mounted (check ConfigMap hubble-ui-nginx).
-     If RefNotPermitted → ReferenceGrant missing in kube-system. -->
+> **Note**: AGFC only allows ports 80/443, and Hubble UI's React Router
+> doesn't support sub-path hosting (`basename` is hardcoded to `"/"`),
+> so port-forward is the recommended access method.
 
 ## 6. Import Grafana dashboards
 

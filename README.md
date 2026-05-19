@@ -93,8 +93,7 @@ OTel's native profiles signal is still in Development as of 2026-05.
 Enables **Cilium Hubble** via Azure Advanced Container Networking Services
 (ACNS). Since stage 01 already deploys Cilium as the data plane, a single
 `az aks update --enable-acns` unlocks L3/L4/L7 flow visibility, DNS
-monitoring, and packet-drop analysis. Includes **Hubble UI** exposed via
-AGFC gateway at `/hubble`.
+monitoring, and packet-drop analysis. Includes **Hubble UI** (access via `kubectl port-forward`).
 
 ### [`07_slo_monitoring/`](./07_slo_monitoring)
 Defines **Service Level Objectives** using [Sloth](https://sloth.dev/) on

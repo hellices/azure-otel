@@ -88,8 +88,7 @@ profiles 시그널은 2026-05 기준 Development 단계.
 Azure ACNS(Advanced Container Networking Services) 를 활성화하여
 **Cilium Hubble** 네트워크 관측성을 추가합니다. 01단계에서 Cilium 데이터플레인이
 이미 배포되어 있으므로 `az aks update --enable-acns` 한 줄로 L3/L4/L7 플로우
-가시성, DNS 모니터링, 패킷 드롭 분석이 가능합니다. **Hubble UI**를 AGFC 게이트웨이
-`/hubble` 경로로 노출합니다.
+가시성, DNS 모니터링, 패킷 드롭 분석이 가능합니다. **Hubble UI**를 포함합니다 (`kubectl port-forward`로 접속).
 
 ### [`07_slo_monitoring/`](./07_slo_monitoring)
 02단계의 RED 메트릭 위에 [Sloth](https://sloth.dev/) 로 **SLO** 를 정의합니다.

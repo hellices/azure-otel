@@ -61,20 +61,22 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
 
 ## 4. Hubble UI 배포
 
-웹 기반 플로우 시각화 UI를 배포하고 AGFC 게이트웨이(`/hubble`)로 노출합니다.
+웹 기반 플로우 시각화 UI를 배포합니다.
 
 ```bash
 kubectl apply -f manifests/hubble-ui.yaml
 kubectl -n kube-system rollout status deploy/hubble-ui --timeout=90s
-
-# HTTPRoute로 게이트웨이 노출
-kubectl apply -f manifests/httproute.yaml
-
-# 접속
-AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
-  -o jsonpath='{.status.addresses[0].value}')
-echo "http://${AGFC}/hubble"
 ```
+
+port-forward로 접속:
+
+```bash
+kubectl -n kube-system port-forward svc/hubble-ui 12000:80
+# http://localhost:12000 접속
+```
+
+> **참고**: AGFC는 포트 80/443만 허용하고, Hubble UI의 React Router는
+> sub-path 호스팅을 지원하지 않아 port-forward가 권장 접속 방법입니다.
 
 ## 5. Grafana 대시보드
 
