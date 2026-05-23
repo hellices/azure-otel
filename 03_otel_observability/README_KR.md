@@ -49,6 +49,9 @@ kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 ## 1. Connection String Secret + 매니페스트 적용
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 kubectl -n azure-otel create secret generic otel-collector-secrets \
   --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks)" \
@@ -60,6 +63,26 @@ kubectl apply -f manifests/instrumentation.yaml
 kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$connStr = azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks
+kubectl -n azure-otel create secret generic otel-collector-secrets `
+  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$connStr" `
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f manifests/collector.yaml
+kubectl apply -f manifests/instrumentation.yaml
+
+kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
+kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
+```
+
+</details>
 
 ama-metrics가 새 PodMonitor를 못 보면 한 번 재시작:
 
@@ -107,6 +130,10 @@ requests | where timestamp > ago(15m)
 
 1. Grafana managed identity 에 App Insights 에 대한 `Monitoring Reader`
    권한 부여 (1회성):
+
+   <details>
+   <summary><strong>macOS / Linux</strong></summary>
+
    ```bash
    rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
    ai=$(azd env get-value APPLICATION_INSIGHTS_NAME --cwd ../01_deploy_to_aks)
@@ -116,6 +143,24 @@ requests | where timestamp > ago(15m)
    az role assignment create --assignee-object-id "$gid" --assignee-principal-type ServicePrincipal \
      --role "Monitoring Reader" --scope "$aiid"
    ```
+
+   </details>
+
+   <details open>
+   <summary><strong>Windows (PowerShell)</strong></summary>
+
+   ```powershell
+   $rg = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+   $ai = azd env get-value APPLICATION_INSIGHTS_NAME --cwd ../01_deploy_to_aks
+   $gfn = az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv
+   $gid = az grafana show -n $gfn -g $rg --query identity.principalId -o tsv
+   $aiid = az monitor app-insights component show -g $rg -a $ai --query id -o tsv
+   az role assignment create --assignee-object-id $gid --assignee-principal-type ServicePrincipal `
+     --role "Monitoring Reader" --scope $aiid
+   ```
+
+   </details>
+
 2. Grafana → **Explore** → datasource **Azure Monitor** → Service
    **Application Insights** → Query type **Traces** → App Insights 리소스
    선택 → `Trace ID` (= `operation_Id`) 붙여넣기 → trace 시각이 들어가게

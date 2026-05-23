@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
   Post-provision hook:
-    1. Enables the AKS Gateway API + Application Load Balancer add-on.
+    1. (If AGFC enabled) Enables the AKS Gateway API + Application Load Balancer add-on.
     2. Merges kubeconfig and waits for the ALB controller to be ready.
     3. Reads the pre-provisioned 'aks-appgateway' subnet ID from azd output.
     4. Grants the ALB managed identity Network Contributor on that subnet.
@@ -12,6 +12,39 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 # ---------- Read azd environment outputs ----------
 $rg        = azd env get-value AZURE_RESOURCE_GROUP
 $aksName   = azd env get-value AKS_NAME
+$enableAgfc = azd env get-value ENABLE_AGFC 2>$null
+
+# ---------- Skip AGFC if disabled ----------
+if ($enableAgfc -ne 'true') {
+    Write-Host "==> AGFC disabled (ENABLE_AGFC=$enableAgfc). Fetching kubeconfig only..."
+    az aks get-credentials --resource-group $rg --name $aksName --overwrite-existing
+
+    $enableAppGw = azd env get-value ENABLE_APPGW 2>$null
+    if ($enableAppGw -eq 'true') {
+        $appGwIp = azd env get-value APPGW_PUBLIC_IP 2>$null
+        Write-Host ""
+        Write-Host "==> Application Gateway mode. Public IP: $appGwIp"
+        Write-Host "    Access the app at: http://$appGwIp"
+        Write-Host ""
+        Write-Host "==> Deploying app with Helm (appGw mode)..."
+        helm upgrade --install azure-otel ./azure-otel `
+            --namespace azure-otel --create-namespace `
+            --set gateway.enabled=false `
+            --set appGw.enabled=true `
+            --wait --timeout 5m
+    } else {
+        Write-Host ""
+        Write-Host "==> Deploying app with Helm (public LB mode)..."
+        helm upgrade --install azure-otel ./azure-otel `
+            --namespace azure-otel --create-namespace `
+            --set gateway.enabled=false `
+            --set appGw.enabled=false `
+            --set loadBalancer.enabled=true `
+            --wait --timeout 5m
+    }
+    exit 0
+}
+
 $subnetId  = azd env get-value AGFC_SUBNET_ID
 
 # Microsoft.AlbController extension is not GA in every region (e.g. koreacentral

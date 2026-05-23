@@ -18,6 +18,9 @@
 
 ## 1. ACNS 활성화
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 cd 06_hubble_network_observability
 
@@ -29,6 +32,25 @@ az aks update \
   --name "$AKS" \
   --enable-acns
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+cd 06_hubble_network_observability
+
+$RG = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$AKS = azd env get-value AKS_NAME --cwd ../01_deploy_to_aks
+
+az aks update `
+  --resource-group $RG `
+  --name $AKS `
+  --enable-acns
+```
+
+</details>
 
 ## 2. Hubble 확인
 
@@ -43,6 +65,9 @@ kubectl -n kube-system get pods -l k8s-app=hubble-relay
 
 ## 3. Hubble 플로우 관찰 (cilium-agent exec 방식 — 가장 간편)
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
   -o jsonpath='{.items[0].metadata.name}')
@@ -55,6 +80,26 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
 kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
   hubble observe -n azure-otel --verdict DROPPED
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$CILIUM_POD = kubectl -n kube-system get pods -l k8s-app=cilium `
+  -o jsonpath='{.items[0].metadata.name}'
+
+# azure-otel 네임스페이스의 최근 20개 플로우 조회
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --last 20
+
+# 드롭된 패킷만 필터
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --verdict DROPPED
+```
+
+</details>
 
 > **참고**: Hubble Relay는 mTLS를 사용하므로 로컬 `hubble` CLI로 직접 접속하려면
 > TLS 인증서 추출이 필요합니다. 상세 방법은 [README.md](./README.md)의 3b 섹션을 참조하세요.
@@ -84,6 +129,9 @@ kubectl -n kube-system port-forward svc/hubble-ui 12000:80
 > `hubble-metrics` 설정이 비어 있어, 커뮤니티 대시보드(16613)는 기본 상태에서 빈 패널을 보여줍니다.
 > 플로우 관찰은 `hubble observe` 명령으로만 가능합니다.
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
 token=$(az account get-access-token \
@@ -98,11 +146,46 @@ curl -sS "https://grafana.com/api/dashboards/16613/revisions/latest/download" \
     --data-binary @-
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+
+$dash = Invoke-RestMethod -Uri "https://grafana.com/api/dashboards/16613/revisions/latest/download"
+$dash.id = $null
+$body = @{ dashboard=$dash; overwrite=$true; folderId=0 } | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+  -Headers @{ Authorization="Bearer $token"; "Content-Type"="application/json" } `
+  -Body $body
+```
+
+</details>
+
 ## 정리
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 az aks update --resource-group "$RG" --name "$AKS" --disable-acns
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+az aks update --resource-group $RG --name $AKS --disable-acns
+```
+
+</details>
 
 ## 참고
 

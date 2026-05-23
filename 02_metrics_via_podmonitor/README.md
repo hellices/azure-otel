@@ -134,6 +134,9 @@ port-forward an ama-metrics pod to :9090 and query `/api/v1/targets` directly
 > `azd env get-value` requires the directory containing `azure.yaml`
 > (`01_deploy_to_aks`). The `--cwd` flag avoids having to `cd` there.
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 amwUrl=$(az monitor account show \
   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
@@ -146,6 +149,25 @@ curl -sS -H "Authorization: Bearer $amwTok" \
   "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)"
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$amwUrl = az monitor account show `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" `
+  --query metrics.prometheusQueryEndpoint -o tsv
+$amwTok = az account get-access-token `
+  --resource https://prometheus.monitor.azure.com `
+  --query accessToken -o tsv
+Invoke-RestMethod -Uri "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)" `
+  -Headers @{ Authorization = "Bearer $amwTok" }
+```
+
+</details>
+
 If `{"service":"nodejs"}`, `python`, and `spring` are returned, the pipeline
 is healthy.
 
@@ -153,12 +175,29 @@ is healthy.
 
 Open the Grafana portal:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 az grafana show \
   -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" \
   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
   --query properties.endpoint -o tsv
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+az grafana show `
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query properties.endpoint -o tsv
+```
+
+</details>
 
 Managed Grafana → Explore → datasource: **Managed_Prometheus_<amw-name>**
 
@@ -185,6 +224,25 @@ sum by (service) (rate(http_server_request_duration_seconds_count[5m]))
 >   --role 'Monitoring Data Reader' --scope "$amwId"
 > ```
 
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$mi = az grafana show `
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query identity.principalId -o tsv
+$amwId = az monitor account show `
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query id -o tsv
+az role assignment create --assignee-object-id $mi `
+  --assignee-principal-type ServicePrincipal `
+  --role 'Monitoring Data Reader' --scope $amwId
+```
+
+</details>
+
 ### 6. Import the Grafana dashboards (Node / Python / Spring)
 
 In the Managed Grafana console:
@@ -196,7 +254,7 @@ In the Managed Grafana console:
 
 There are only three of them so the UI is easiest. To bulk-import via CLI:
 
-<details><summary>CLI import (optional)</summary>
+<details open><summary>CLI import — macOS / Linux (optional)</summary>
 
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
@@ -212,6 +270,25 @@ for f in dashboards/nodejs.json dashboards/python.json dashboards/spring.json; d
   echo
 done
 rm -f body.json
+```
+
+</details>
+
+<details open><summary>CLI import — Windows PowerShell (optional)</summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+foreach ($f in "dashboards/nodejs.json","dashboards/python.json","dashboards/spring.json") {
+  $body = Get-Content $f | ConvertFrom-Json
+  $body.id = $null
+  $payload = @{ dashboard = $body; overwrite = $true; folderId = 0 } | ConvertTo-Json -Depth 20
+  Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+    -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
+    -Body $payload
+}
 ```
 
 </details>

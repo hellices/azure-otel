@@ -108,8 +108,11 @@ nodejs:
 #   /api/*   -> python   (FastAPI edge; /api prefix is stripped before forwarding)
 # Spring is intentionally NOT exposed; it is only reachable from Python pods
 # inside the cluster (enforced by networkPolicy below).
+#
+# When disabled (default for fast hands-on), set nodejs and python services
+# to LoadBalancer type via the `loadBalancer` section below.
 gateway:
-  enabled: true
+  enabled: false
   albName: "alb"              # Name for the ApplicationLoadBalancer CR
   subnetId: ""                # Set at install time via --set gateway.subnetId=...
   listener:
@@ -117,6 +120,22 @@ gateway:
     protocol: HTTP
   # Path prefix matched by AGFC and stripped via URLRewrite before forwarding to python.
   apiPathPrefix: "/api"
+
+# ---- LoadBalancer mode (used when gateway.enabled=false AND appGw.enabled=false) ----
+# Exposes nodejs on a public Azure LB IP so the SPA is reachable without AGFC.
+# Python is also exposed so the browser can reach /api directly.
+loadBalancer:
+  enabled: false              # Fallback only; prefer appGw mode
+
+# ---- Application Gateway v2 mode (default when gateway.enabled=false) ----
+# AppGW is provisioned in Bicep (parallel with AKS) and routes:
+#   /      -> nodejs internal LB (10.240.1.100:3000)
+#   /api/* -> python internal LB (10.240.1.101:8000)
+# No addon or postprovision step needed. PYTHON_API_BASE_URL=/api works as-is.
+appGw:
+  enabled: true
+  nodejsInternalIp: "10.240.1.100"
+  pythonInternalIp: "10.240.1.101"
 
 # ---- OpenTelemetry auto-instrumentation (used by 02_metrics_via_podmonitor) ----
 # When enabled, every app Deployment gets:

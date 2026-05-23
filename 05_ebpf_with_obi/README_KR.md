@@ -118,6 +118,9 @@ kubectl get clusterrole obi -o yaml | grep -E 'pods|services|replicasets|nodes'
 
 ## 3. 인입 확인
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 for i in $(seq 1 50); do curl -s "http://$alb/api/items" > /dev/null; done
@@ -128,6 +131,24 @@ kubectl -n azure-otel logs ds/obi --tail=30 | grep -iE 'service|trace|metric|dis
 # Collector 가 OBI 로부터 OTLP 를 받고 있는지
 kubectl -n azure-otel logs deploy/otel-collector --tail=50 | grep -iE 'beyla|obi|telemetry.sdk.name'
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+1..50 | ForEach-Object { Invoke-WebRequest -Uri "http://$alb/api/items" -UseBasicParsing | Out-Null }
+
+# OBI 로그
+kubectl -n azure-otel logs ds/obi --tail=30 | Select-String -Pattern 'service|trace|metric|discover'
+
+# Collector 가 OBI 로부터 OTLP 를 받고 있는지
+kubectl -n azure-otel logs deploy/otel-collector --tail=50 | Select-String -Pattern 'beyla|obi|telemetry.sdk.name'
+```
+
+</details>
 
 App Insights (옵션 B 또는 옵션 A-2) Kusto:
 

@@ -14,8 +14,17 @@
     "enablePrivateCluster": {
       "value": false
     },
+    "enableAgfc": {
+      "value": "${ENABLE_AGFC=false}"
+    },
+    "enableAppGw": {
+      "value": "${ENABLE_APPGW=true}"
+    },
+    "enableAmpls": {
+      "value": "${ENABLE_AMPLS=false}"
+    },
     "nodeCount": {
-      "value": 3
+      "value": 2
     },
     "nodeVmSize": {
       "value": "Standard_D4s_v5"

@@ -55,6 +55,9 @@ observability layer on top of it.
 
 ## 1. Enable ACNS on the cluster
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 cd 06_hubble_network_observability    # from repo root
 
@@ -66,6 +69,25 @@ az aks update \
   --name "$AKS" \
   --enable-acns
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+cd 06_hubble_network_observability    # from repo root
+
+$RG = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$AKS = azd env get-value AKS_NAME --cwd ../01_deploy_to_aks
+
+az aks update `
+  --resource-group $RG `
+  --name $AKS `
+  --enable-acns
+```
+
+</details>
 
 This enables:
 - **Container Network Observability** — Hubble flow logs via `hubble observe`.
@@ -95,6 +117,9 @@ kubectl -n kube-system get pods -l k8s-app=hubble-relay
 
 The simplest way to observe flows on AKS — no TLS certs needed:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 # Pick any cilium-agent pod
 CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
@@ -108,6 +133,27 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
 kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
   hubble observe -n azure-otel --verdict DROPPED
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+# Pick any cilium-agent pod
+$CILIUM_POD = kubectl -n kube-system get pods -l k8s-app=cilium `
+  -o jsonpath='{.items[0].metadata.name}'
+
+# Observe all flows in the azure-otel namespace
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --last 20
+
+# Filter: only dropped packets
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --verdict DROPPED
+```
+
+</details>
 
 <!-- DEBUG: If "hubble observe" returns nothing, generate traffic first (step 4)
      or check if the cilium-agent has finished restarting. -->
@@ -153,6 +199,9 @@ hubble observe --server localhost:4245 \
 
 ## 4. Generate traffic and explore
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 AGFC=$(kubectl get gateway azure-otel-gw -n azure-otel \
   -o jsonpath='{.status.addresses[0].value}')
@@ -166,6 +215,27 @@ CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
 kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
   hubble observe -n azure-otel --last 50
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$AGFC = kubectl get gateway azure-otel-gw -n azure-otel `
+  -o jsonpath='{.status.addresses[0].value}'
+
+# Generate cross-service traffic
+1..30 | ForEach-Object { Invoke-WebRequest -Uri "http://$AGFC/api/items" -UseBasicParsing | Out-Null }
+
+# Watch the flows (via cilium-agent)
+$CILIUM_POD = kubectl -n kube-system get pods -l k8s-app=cilium `
+  -o jsonpath='{.items[0].metadata.name}'
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --last 50
+```
+
+</details>
 
 You should see the full call chain: `AGFC → nodejs → python → spring`,
 with HTTP method, status codes, and latency for each hop.
@@ -205,6 +275,9 @@ configured — see note below):
 
 To import manually:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
 token=$(az account get-access-token \
@@ -219,6 +292,28 @@ curl -sS "https://grafana.com/api/dashboards/16613/revisions/latest/download" \
     -H 'Content-Type: application/json' \
     --data-binary @-
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+
+# Download and import the Hubble dashboard
+$dash = Invoke-RestMethod -Uri "https://grafana.com/api/dashboards/16613/revisions/latest/download"
+$dash.id = $null
+$body = @{ dashboard=$dash; overwrite=$true; folderId=0 } | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+  -Headers @{ Authorization="Bearer $token"; "Content-Type"="application/json" } `
+  -Body $body
+```
+
+</details>
 
 > **Note**: The community Hubble dashboards (16613 etc.) query `hubble_*`
 > Prometheus metrics that require the `hubble-metrics` config to list
@@ -245,6 +340,9 @@ not flow/DNS/drop metrics).
 
 With ACNS enabled, Cilium network policies get richer:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 CILIUM_POD=$(kubectl -n kube-system get pods -l k8s-app=cilium \
   -o jsonpath='{.items[0].metadata.name}')
@@ -258,9 +356,32 @@ kubectl -n kube-system exec "$CILIUM_POD" -c cilium-agent -- \
   hubble observe -n azure-otel --output json --last 100 > flows.json
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$CILIUM_POD = kubectl -n kube-system get pods -l k8s-app=cilium `
+  -o jsonpath='{.items[0].metadata.name}'
+
+# See which flows are being denied by NetworkPolicy
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --verdict DROPPED --type policy-verdict
+
+# Export flows as JSON for audit
+kubectl -n kube-system exec $CILIUM_POD -c cilium-agent -- `
+  hubble observe -n azure-otel --output json --last 100 | Out-File flows.json
+```
+
+</details>
+
 ## Cleanup
 
 ACNS can be disabled without affecting application workloads:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 az aks update \
@@ -268,6 +389,20 @@ az aks update \
   --name "$AKS" \
   --disable-acns
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+az aks update `
+  --resource-group $RG `
+  --name $AKS `
+  --disable-acns
+```
+
+</details>
 
 ## References
 

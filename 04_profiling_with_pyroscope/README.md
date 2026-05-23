@@ -96,10 +96,25 @@ without conflicts.
 
 Generate some CPU work:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 for i in $(seq 1 200); do curl -s "http://$alb/api/items" > /dev/null; done
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+1..200 | ForEach-Object { Invoke-WebRequest -Uri "http://$alb/api/items" -UseBasicParsing | Out-Null }
+```
+
+</details>
 
 Open the Pyroscope UI:
 
@@ -123,17 +138,36 @@ In the UI:
 
 ### 4a. Route the gateway
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 kubectl apply -f manifests/httproute.yaml
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 echo "Pyroscope URL: http://$alb/pyroscope"
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+kubectl apply -f manifests/httproute.yaml
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+Write-Host "Pyroscope URL: http://$alb/pyroscope"
+```
+
+</details>
+
 ### 4b. Register the datasource in AMG
 
 The `grafana-pyroscope-datasource` is a **core** plugin in AMG Standard
 (Grafana 12) — no plugin install / `grafanaPlugins` ARM property needed,
 just create the datasource via the Grafana HTTP API:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
@@ -156,6 +190,32 @@ dsUid=$(curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/na
 curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/uid/$dsUid/health"
 # Expect: status = OK, message = "Data source is working"
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$rg = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$gfn = az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv
+$gfEndpoint = az grafana show -n $gfn -g $rg --query properties.endpoint -o tsv
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+$tok = az account get-access-token --resource "https://grafana.azure.com" --query accessToken -o tsv
+
+$body = @{ name="Pyroscope"; type="grafana-pyroscope-datasource"; access="proxy"; url="http://$alb/pyroscope" } | ConvertTo-Json
+Invoke-RestMethod -Uri "$gfEndpoint/api/datasources" -Method Post `
+  -Headers @{ Authorization="Bearer $tok"; "Content-Type"="application/json" } `
+  -Body $body
+
+# Health check
+$ds = Invoke-RestMethod -Uri "$gfEndpoint/api/datasources/name/Pyroscope" `
+  -Headers @{ Authorization="Bearer $tok" }
+Invoke-RestMethod -Uri "$gfEndpoint/api/datasources/uid/$($ds.uid)/health" `
+  -Headers @{ Authorization="Bearer $tok" }
+```
+
+</details>
 
 Or the same thing through the UI: Grafana → **Connections → Add new data
 source → Pyroscope** → URL `http://<ALB>/pyroscope`.

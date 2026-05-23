@@ -40,18 +40,13 @@ app pod ─OTLP/HTTP─► AMA (Azure Monitor Agent) ─► Application Insights
 
 ```bash
 # AKS auto-instrumentation
-az feature register \
-  --namespace "Microsoft.ContainerService" \
-  --name "AzureMonitorAppMonitoringPreview"
+az feature register --namespace "Microsoft.ContainerService" --name "AzureMonitorAppMonitoringPreview"
 
 # (Optional) OTLP ingestion for Application Insights
-az feature register \
-  --namespace "Microsoft.Insights" \
-  --name "OtlpApplicationInsights"
+az feature register --namespace "Microsoft.Insights" --name "OtlpApplicationInsights"
 
 # Wait for registration
-az feature list -o table \
-  --query "[?contains(name, 'AzureMonitorAppMonitoringPreview')].{Name:name,State:properties.state}"
+az feature list -o table --query "[?contains(name, 'AzureMonitorAppMonitoringPreview')].{Name:name,State:properties.state}"
 
 # Propagate
 az provider register --namespace "Microsoft.ContainerService"
@@ -79,6 +74,9 @@ kubectl -n azure-otel delete secret otel-collector-secrets --ignore-not-found
 
 ## 2. Enable AKS auto-instrumentation on the cluster
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 RG=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
 AKS=$(azd env get-value AKS_NAME --cwd ../01_deploy_to_aks)
@@ -88,6 +86,23 @@ az aks update \
   --name "$AKS" \
   --enable-azure-monitor-app-monitoring
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$RG = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$AKS = azd env get-value AKS_NAME --cwd ../01_deploy_to_aks
+
+az aks update `
+  --resource-group $RG `
+  --name $AKS `
+  --enable-azure-monitor-app-monitoring
+```
+
+</details>
 
 This installs the AKS auto-instrumentation webhook. Verify:
 
@@ -100,6 +115,9 @@ kubectl get crd instrumentations.monitor.azure.com
 The CR tells AKS which Application Insights resource to send telemetry to and
 which languages to auto-instrument.
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 CONN_STR=$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks)
 
@@ -109,6 +127,23 @@ sed "s|\${APPLICATION_INSIGHTS_CONNECTION_STRING}|${CONN_STR}|" \
 
 kubectl -n azure-otel get instrumentation.monitor.azure.com
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$CONN_STR = azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks
+
+(Get-Content manifests/instrumentation.yaml) `
+  -replace '\$\{APPLICATION_INSIGHTS_CONNECTION_STRING\}', $CONN_STR | `
+  kubectl apply -f -
+
+kubectl -n azure-otel get instrumentation.monitor.azure.com
+```
+
+</details>
 
 ## 4. Patch the Python deployment (limited preview)
 
@@ -151,9 +186,12 @@ Java and Node.js pods should have an Azure Monitor init container.
 Generate some traffic, wait 2–3 minutes, then open the Application Insights
 resource in the Azure portal:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
-# Generate traffic via the AGFC endpoint
-AGFC=$(azd env get-value AGFC_URL --cwd ../01_deploy_to_aks 2>/dev/null || \
+# Generate traffic via the AppGW / AGFC endpoint
+AGFC=$(azd env get-value APPGW_PUBLIC_IP --cwd ../01_deploy_to_aks 2>/dev/null || \
        kubectl get gateway azure-otel-gateway -n azure-otel \
          -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
 
@@ -161,6 +199,25 @@ for i in $(seq 1 20); do curl -s "http://${AGFC}/api/items" > /dev/null; done
 
 echo "Check traces in: https://portal.azure.com → Application Insights → Transaction search"
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$AGFC = azd env get-value APPGW_PUBLIC_IP --cwd ../01_deploy_to_aks 2>$null
+if (-not $AGFC) {
+  $AGFC = kubectl get gateway azure-otel-gateway -n azure-otel `
+    -o jsonpath='{.status.addresses[0].value}' 2>$null
+}
+
+1..20 | ForEach-Object { Invoke-WebRequest -Uri "http://$AGFC/api/items" -UseBasicParsing | Out-Null }
+
+Write-Host "Check traces in: https://portal.azure.com → Application Insights → Transaction search"
+```
+
+</details>
 
 ### C. Application Map
 

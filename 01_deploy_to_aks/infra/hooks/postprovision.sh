@@ -2,7 +2,7 @@
 # Re-exec under bash when azd invokes this script with sh
 if [ -z "$BASH_VERSION" ]; then exec bash "$0" "$@"; fi
 # Post-provision hook:
-#   1. Enables the AKS Gateway API + Application Load Balancer add-on.
+#   1. (If AGFC enabled) Enables the AKS Gateway API + Application Load Balancer add-on.
 #   2. Merges kubeconfig and waits for the ALB controller to be ready.
 #   3. Reads the pre-provisioned 'aks-appgateway' subnet ID from azd output.
 #   4. Grants the ALB managed identity Network Contributor on that subnet.
@@ -11,6 +11,41 @@ set -euo pipefail
 # ---------- Read azd environment outputs ----------
 rg=$(azd env get-value AZURE_RESOURCE_GROUP)
 aksName=$(azd env get-value AKS_NAME)
+enableAgfc=$(azd env get-value ENABLE_AGFC 2>/dev/null || echo "false")
+enableAgfc=$(echo "$enableAgfc" | tr '[:upper:]' '[:lower:]')  # Bicep string(true) -> "True"; normalise
+
+# ---------- Skip AGFC if disabled ----------
+if [[ "$enableAgfc" != "true" ]]; then
+    echo "==> AGFC disabled (ENABLE_AGFC=$enableAgfc). Fetching kubeconfig only..."
+    az aks get-credentials --resource-group "$rg" --name "$aksName" --overwrite-existing
+
+    enableAppGw=$(azd env get-value ENABLE_APPGW 2>/dev/null || echo "false")
+    enableAppGw=$(echo "$enableAppGw" | tr '[:upper:]' '[:lower:]')
+    if [[ "$enableAppGw" == "true" ]]; then
+        appGwIp=$(azd env get-value APPGW_PUBLIC_IP 2>/dev/null || echo "")
+        echo ""
+        echo "==> Application Gateway mode. Public IP: $appGwIp"
+        echo "    Access the app at: http://$appGwIp"
+        echo ""
+        echo "==> Deploying app with Helm (appGw mode)..."
+        helm upgrade --install azure-otel ./azure-otel \
+            --namespace azure-otel --create-namespace \
+            --set gateway.enabled=false \
+            --set appGw.enabled=true \
+            --wait --timeout 5m
+    else
+        echo ""
+        echo "==> Deploying app with Helm (public LB mode)..."
+        helm upgrade --install azure-otel ./azure-otel \
+            --namespace azure-otel --create-namespace \
+            --set gateway.enabled=false \
+            --set appGw.enabled=false \
+            --set loadBalancer.enabled=true \
+            --wait --timeout 5m
+    fi
+    exit 0
+fi
+
 subnetId=$(azd env get-value AGFC_SUBNET_ID)
 
 echo "==> Enabling Gateway API + ALB add-on on '$aksName' (rg: $rg) ..."

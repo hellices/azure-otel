@@ -5,13 +5,34 @@
 AKS + 모니터링 스택(AMW, Grafana, App Insights, Log Analytics)을 프로비저닝하고
 [`azure-otel/`](./azure-otel) Helm 차트를 배포합니다.
 
+기본적으로 **Application Gateway v2**를 사용해 L7 경로 기반 라우팅
+(/ → nodejs, /api/* → python)을 제공하며, AKS와 병렬로 프로비저닝되어
+빠른 배포가 가능합니다 (~10분).
+
+**AGFC**(Application Gateway for Containers)와 **AMPLS**(Azure Monitor Private
+Link Scope)는 선택 사항으로, 활성화 시 ~30분 이상 소요됩니다.
+
 ![아키텍처](../docs/diagrams/deploy-to-aks-architecture.png)
 
 ## Prerequisites
 
+<details open>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 brew install azure/azd/azd azure-cli kubectl helm
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+winget install Microsoft.Azd Microsoft.AzureCLI Kubernetes.kubectl Helm.Helm
+```
+
+</details>
 
 ## 실행 순서
 
@@ -30,17 +51,27 @@ azd env new dev
 azd env set AZURE_LOCATION koreacentral
 ```
 
-### 2. 인프라 프로비저닝 (Bicep만)
+### 2. 인프라 프로비저닝
+
+**기본 모드 (~10분)** — AppGW v2 + Internal LB (경로 기반 라우팅):
 
 ```bash
 azd up
 ```
 
-`azd up`은 Bicep으로 AKS/모니터링 스택을 만들고 postprovision hook에서
-Gateway API + ALB add-on 활성화 + AGFC subnet 권한 부여까지만 수행합니다.
-**Helm 차트 배포는 포함되지 않습니다.**
+**AGFC 모드 (~30분)** — Application Gateway for Containers + AMPLS:
+
+```bash
+azd env set ENABLE_AGFC true
+azd env set ENABLE_APPGW false
+azd env set ENABLE_AMPLS true
+azd up
+```
 
 ### 3. kubectl 연결
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 rg=$(azd env get-value AZURE_RESOURCE_GROUP)
@@ -49,51 +80,139 @@ az aks get-credentials --resource-group "$rg" --name "$aks" --overwrite-existing
 kubectl get nodes
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$rg = azd env get-value AZURE_RESOURCE_GROUP
+$aks = azd env get-value AKS_NAME
+az aks get-credentials --resource-group $rg --name $aks --overwrite-existing
+kubectl get nodes
+```
+
+</details>
+
 ### 4. Helm 차트 배포
+
+**기본 모드 (AppGW v2):**
+
+```bash
+helm upgrade --install azure-otel ./azure-otel --namespace azure-otel --create-namespace --set gateway.enabled=false --set appGw.enabled=true --wait --timeout 5m
+
+kubectl -n azure-otel get pods,svc
+```
+
+**AGFC 모드:**
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 subnetId=$(azd env get-value AGFC_SUBNET_ID)
 helm upgrade --install azure-otel ./azure-otel \
   --namespace azure-otel --create-namespace \
+  --set gateway.enabled=true \
   --set "gateway.subnetId=$subnetId" \
   --wait --timeout 10m
 
 kubectl -n azure-otel get pods,svc
 ```
 
-### 4-1. AGFC public 주소 확인
+</details>
 
-Helm 배포 후 Gateway가 public IP/FQDN을 받기까지 1–3분 정도 걸립니다.
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$subnetId = azd env get-value AGFC_SUBNET_ID
+helm upgrade --install azure-otel ./azure-otel `
+  --namespace azure-otel --create-namespace `
+  --set gateway.enabled=true `
+  --set "gateway.subnetId=$subnetId" `
+  --wait --timeout 10m
+
+kubectl -n azure-otel get pods,svc
+```
+
+</details>
+
+### 4-1. Public 주소 확인
+
+**기본 모드 (AppGW v2)** — 단일 공인 IP + 경로 기반 라우팅:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
-# 한 번만 조회
-kubectl -n azure-otel get gateway azure-otel-gw \
-  -o 'jsonpath={.status.addresses[0].value}'
-
-# 받을 때까지 대기 (kubectl 1.23+)
-kubectl -n azure-otel wait gateway/azure-otel-gw \
-  --for=jsonpath='{.status.addresses[0].value}' --timeout=5m
-
-# 받은 주소를 변수에 저장 + 바로 열기
-addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
-  -o 'jsonpath={.status.addresses[0].value}')
+addr=$(azd env get-value APPGW_PUBLIC_IP)
 echo "http://$addr"
 open "http://$addr"    # macOS; Linux에서는 xdg-open
 ```
-`Gateway` / `HTTPRoute`는 Helm 차트가 만들고 AGFC 컨트롤러가 Application Gateway
-for Containers의 frontend 주소를 `.status.addresses[0].value`에 채워 넣습니다.
 
+</details>
 
-agfc frontend 주소로 접근하면 다음과 같은 ui를 확인할 수 있습니다.
-![접속 화면](../docs/images/01_service_ui.png)
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$addr = azd env get-value APPGW_PUBLIC_IP
+Write-Host "http://$addr"
+Start-Process "http://$addr"
+```
+
+</details>
+
+**AGFC 모드** — 단일 Gateway 주소로 모든 경로 라우팅:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
+```bash
+addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
+  -o 'jsonpath={.status.addresses[0].value}')
+echo "http://$addr"
+open "http://$addr"
+```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$addr = kubectl -n azure-otel get gateway azure-otel-gw `
+  -o 'jsonpath={.status.addresses[0].value}'
+Write-Host "http://$addr"
+Start-Process "http://$addr"
+```
+
+</details>
 
 ### 5. Grafana 열기
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT)
 echo "$grafana"
 open "$grafana"    # macOS; Linux에서는 xdg-open
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT
+Write-Host $grafana
+Start-Process $grafana
+```
+
+</details>
 
 ### 6. 정리
 
@@ -109,18 +228,21 @@ azd down --purge --force
 
 리소스 그룹 `rg-<env>` 하위:
 
-- **VNet** `aotel-vnet-*` (10.240.0.0/16) + private `aks-subnet` (10.240.0.0/22)
-- **AKS** `aotel-aks-*` (Standard, 3× `Standard_D4s_v5` 3–5 autoscale, Azure CNI overlay,
+- **VNet** `vnet-otel-*` (10.240.0.0/16) + `aks-subnet` (10.240.0.0/22)
+- **AKS** `aks-otel-*` (Standard, 2× `Standard_D4s_v5` 2–6 autoscale, Azure CNI overlay,
   Cilium + NetworkPolicy, OIDC, Workload Identity, RBAC)
   - Container Insights (`omsagent`) → Log Analytics
   - Managed Prometheus (`azureMonitorProfile.metrics`) → AMW
 - **Log Analytics** + **Application Insights** (workspace-based)
 - **Azure Monitor Workspace** (managed Prometheus 백엔드)
 - **Azure Managed Grafana** (Standard, AMW 데이터소스 연결)
-- **ACR** `aotelacr*` (Standard, AKS kubelet에 `AcrPull` 부여)
-- **AMPLS** + Private Endpoint (`aks-subnet`) + 6개 Private DNS Zone (VNet
-  연결) — 03단계 collector가 App Insights에, ama-metrics가 AMW에 VNet 내부
-  경로로 접근
+- **ACR** `acrotel*` (Standard, AKS kubelet에 `AcrPull` 부여)
+- _(기본)_ **Application Gateway v2** `appgw-subnet` (10.240.4.0/24),
+  경로 기반 라우팅 → Internal LB (nodejs 10.240.1.100, python 10.240.1.101)
+- _(ENABLE_AGFC=true)_ AGFC 서브넷 `aks-appgateway` (10.240.8.0/24, 위임) +
+  postprovision hook에서 ALB add-on 활성화
+- _(ENABLE_AMPLS=true)_ **AMPLS** + Private Endpoint (`aks-subnet`) + 6개
+  Private DNS Zone (VNet 연결)
 
 Role assignments (`principalId` 자동 주입):
 

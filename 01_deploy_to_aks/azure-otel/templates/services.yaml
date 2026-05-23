@@ -1,6 +1,10 @@
 {{- range $key, $svc := dict "spring" .Values.spring "python" .Values.python "nodejs" .Values.nodejs }}
 {{- if $svc.enabled }}
 {{- $ctx := dict "root" $ "svc" $svc "key" $key }}
+{{- /* AppGW mode: internal LB with static IPs for nodejs/python */ -}}
+{{- $appGwMode := and ($.Values.appGw.enabled) (not $.Values.gateway.enabled) (or (eq $key "nodejs") (eq $key "python")) }}
+{{- /* Fallback public LB mode when neither gateway nor appGw is enabled */ -}}
+{{- $publicLbMode := and (not $.Values.gateway.enabled) (not $.Values.appGw.enabled) ($.Values.loadBalancer.enabled) (or (eq $key "nodejs") (eq $key "python")) }}
 ---
 apiVersion: v1
 kind: Service
@@ -8,8 +12,22 @@ metadata:
   name: {{ include "azure-otel.fullname" $ctx }}
   labels:
     {{- include "azure-otel.commonLabels" $ctx | nindent 4 }}
+  {{- if or $appGwMode $publicLbMode }}
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: {{ (index $svc.readinessProbe.httpGet "path") | quote }}
+    {{- if $appGwMode }}
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    {{- end }}
+  {{- end }}
 spec:
+  {{- if $appGwMode }}
+  type: LoadBalancer
+  loadBalancerIP: {{ if eq $key "nodejs" }}{{ $.Values.appGw.nodejsInternalIp }}{{ else }}{{ $.Values.appGw.pythonInternalIp }}{{ end }}
+  {{- else if $publicLbMode }}
+  type: LoadBalancer
+  {{- else }}
   type: {{ $svc.service.type }}
+  {{- end }}
   selector:
     {{- include "azure-otel.selectorLabels" $ctx | nindent 4 }}
   ports:

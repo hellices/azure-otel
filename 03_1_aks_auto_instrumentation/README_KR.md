@@ -35,18 +35,13 @@ app pod ─OTLP/HTTP─► AMA (Azure Monitor Agent) ─► Application Insights
 
 ```bash
 # AKS 자동 계측
-az feature register \
-  --namespace "Microsoft.ContainerService" \
-  --name "AzureMonitorAppMonitoringPreview"
+az feature register --namespace "Microsoft.ContainerService" --name "AzureMonitorAppMonitoringPreview"
 
 # (선택) Application Insights OTLP 수집
-az feature register \
-  --namespace "Microsoft.Insights" \
-  --name "OtlpApplicationInsights"
+az feature register --namespace "Microsoft.Insights" --name "OtlpApplicationInsights"
 
 # 등록 대기
-az feature list -o table \
-  --query "[?contains(name, 'AzureMonitorAppMonitoringPreview')].{Name:name,State:properties.state}"
+az feature list -o table --query "[?contains(name, 'AzureMonitorAppMonitoringPreview')].{Name:name,State:properties.state}"
 
 # 전파
 az provider register --namespace "Microsoft.ContainerService"
@@ -71,6 +66,9 @@ kubectl -n azure-otel delete secret otel-collector-secrets --ignore-not-found
 
 ## 2. AKS 자동 계측 활성화
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 RG=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
 AKS=$(azd env get-value AKS_NAME --cwd ../01_deploy_to_aks)
@@ -81,6 +79,23 @@ az aks update \
   --enable-azure-monitor-app-monitoring
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$RG = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$AKS = azd env get-value AKS_NAME --cwd ../01_deploy_to_aks
+
+az aks update `
+  --resource-group $RG `
+  --name $AKS `
+  --enable-azure-monitor-app-monitoring
+```
+
+</details>
+
 확인:
 
 ```bash
@@ -88,6 +103,9 @@ kubectl get crd instrumentations.monitor.azure.com
 ```
 
 ## 3. AKS Instrumentation CR 생성
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 CONN_STR=$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks)
@@ -97,6 +115,23 @@ sed "s|\${APPLICATION_INSIGHTS_CONNECTION_STRING}|${CONN_STR}|" \
 
 kubectl -n azure-otel get instrumentation.monitor.azure.com
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$CONN_STR = azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks
+
+(Get-Content manifests/instrumentation.yaml) `
+  -replace '\$\{APPLICATION_INSIGHTS_CONNECTION_STRING\}', $CONN_STR | `
+  kubectl apply -f -
+
+kubectl -n azure-otel get instrumentation.monitor.azure.com
+```
+
+</details>
 
 ## 4. Python 디플로이먼트 패치 (제한적 프리뷰)
 

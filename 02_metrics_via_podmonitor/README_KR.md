@@ -23,11 +23,11 @@
                                             nodejs.json / python.json / spring.json
 ```
 
-## 차트가 이미 해주는 것 (01단계)
+## 사전 작업 (01단계에서 완료)
 
 01단계 Helm 차트가 `otel.enabled=true` (기본값)일 때 아래를 자동으로
 포함시키므로, 02단계에서는 Operator + Instrumentation + PodMonitor만
-추가하면 메트릭이 흔러가기 시작합니다:
+추가하면 메트릭이 흘러가기 시작합니다:
 
 - 각 Deployment의 Pod template에
   `instrumentation.opentelemetry.io/inject-{java|python|nodejs}` 및
@@ -135,6 +135,9 @@ kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
 > `azd env get-value`는 `azure.yaml`이 있는 `01_deploy_to_aks` 디렉토리가
 > 필요합니다. `--cwd` 플래그로 `cd` 없이 참조할 수 있습니다.
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 amwUrl=$(az monitor account show \
   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
@@ -147,11 +150,33 @@ curl -sS -H "Authorization: Bearer $amwTok" \
   "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)"
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$amwUrl = az monitor account show `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" `
+  --query metrics.prometheusQueryEndpoint -o tsv
+$amwTok = az account get-access-token `
+  --resource https://prometheus.monitor.azure.com `
+  --query accessToken -o tsv
+Invoke-RestMethod -Uri "$amwUrl/api/v1/query?query=count%20by%20(service)%20(up%7Bnamespace%3D%22azure-otel%22%7D)" `
+  -Headers @{ Authorization = "Bearer $amwTok" }
+```
+
+</details>
+
 `{"service":"nodejs"}`, `python`, `spring` 세 개가 나오면 파이프라인 OK.
 
 #### B. Managed Grafana → AMW 경로 확인
 
 Grafana 포털 주소 확인:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 az grafana show \
@@ -159,6 +184,20 @@ az grafana show \
   -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" \
   --query properties.endpoint -o tsv
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+az grafana show `
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query properties.endpoint -o tsv
+```
+
+</details>
 
 Managed Grafana → Explore → 데이터 소스: **Managed_Prometheus_<amw-name>**
 
@@ -185,6 +224,25 @@ sum by (service) (rate(http_server_request_duration_seconds_count[5m]))
 >   --role 'Monitoring Data Reader' --scope "$amwId"
 > ```
 
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$mi = az grafana show `
+  -n "$(azd env get-value GRAFANA_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query identity.principalId -o tsv
+$amwId = az monitor account show `
+  -n "$(azd env get-value AZURE_MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)" `
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)" `
+  --query id -o tsv
+az role assignment create --assignee-object-id $mi `
+  --assignee-principal-type ServicePrincipal `
+  --role 'Monitoring Data Reader' --scope $amwId
+```
+
+</details>
+
 ### 6. Grafana 대시보드 import (Node / Python / Spring)
 
 Managed Grafana 콘솔에서:
@@ -197,7 +255,7 @@ Managed Grafana 콘솔에서:
 3개이지만 UI가 가장 간단합니다. CLI로 일괄 import 하고 싶으면
 아래 절차를 참고하세요:
 
-<details><summary>CLI로 import (선택)</summary>
+<details open><summary>CLI로 import — macOS / Linux (선택)</summary>
 
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
@@ -213,6 +271,25 @@ for f in dashboards/nodejs.json dashboards/python.json dashboards/spring.json; d
   echo
 done
 rm -f body.json
+```
+
+</details>
+
+<details open><summary>CLI로 import — Windows PowerShell (선택)</summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+foreach ($f in "dashboards/nodejs.json","dashboards/python.json","dashboards/spring.json") {
+  $body = Get-Content $f | ConvertFrom-Json
+  $body.id = $null
+  $payload = @{ dashboard = $body; overwrite = $true; folderId = 0 } | ConvertTo-Json -Depth 20
+  Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+    -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
+    -Body $payload
+}
 ```
 
 </details>

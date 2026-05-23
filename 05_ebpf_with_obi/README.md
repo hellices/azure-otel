@@ -124,6 +124,9 @@ kubectl get clusterrole obi -o yaml | grep -E 'pods|services|replicasets|nodes'
 
 ## 3. Verify ingestion
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 for i in $(seq 1 50); do curl -s "http://$alb/api/items" > /dev/null; done
@@ -134,6 +137,24 @@ kubectl -n azure-otel logs ds/obi --tail=30 | grep -iE 'service|trace|metric|dis
 # Collector receiving OBI OTLP
 kubectl -n azure-otel logs deploy/otel-collector --tail=50 | grep -iE 'beyla|obi|telemetry.sdk.name'
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+1..50 | ForEach-Object { Invoke-WebRequest -Uri "http://$alb/api/items" -UseBasicParsing | Out-Null }
+
+# OBI logs
+kubectl -n azure-otel logs ds/obi --tail=30 | Select-String -Pattern 'service|trace|metric|discover'
+
+# Collector receiving OBI OTLP
+kubectl -n azure-otel logs deploy/otel-collector --tail=50 | Select-String -Pattern 'beyla|obi|telemetry.sdk.name'
+```
+
+</details>
 
 App Insights (option B or A-2) Kusto:
 

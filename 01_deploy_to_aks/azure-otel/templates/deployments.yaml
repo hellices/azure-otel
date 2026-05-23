@@ -66,6 +66,10 @@ spec:
             - name: PYTHON_API_BASE_URL
               value: {{ $public | quote }}
             {{- end }}
+            {{- if not (hasKey $svc.env "PYTHON_INTERNAL_URL") }}
+            - name: PYTHON_INTERNAL_URL
+              value: "http://{{ $.Release.Name }}-{{ $.Values.python.name }}:{{ $.Values.python.service.port }}"
+            {{- end }}
             {{- end }}
           {{- with $svc.livenessProbe }}
           livenessProbe:

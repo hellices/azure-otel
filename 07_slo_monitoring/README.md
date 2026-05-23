@@ -98,6 +98,9 @@ kubectl apply -f manifests/generated-rules.yaml
 
 AMW uses Azure Monitor rule groups, not PrometheusRule CRDs. Convert:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 RG=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
 AMW=$(azd env get-value MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks)
@@ -114,11 +117,35 @@ az monitor account prometheus-rule-group create \
   --enabled true
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$RG = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$AMW = azd env get-value MONITOR_WORKSPACE_NAME --cwd ../01_deploy_to_aks
+$AMW_ID = az monitor account show -g $RG -n $AMW --query id -o tsv
+
+az monitor account prometheus-rule-group create `
+  --resource-group $RG `
+  --rule-group-name "slo-azure-otel" `
+  --scopes $AMW_ID `
+  --rules '@manifests/generated-rules.yaml' `
+  --interval "PT1M" `
+  --enabled true
+```
+
+</details>
+
 > **Note**: The generated YAML may need format conversion for the
 > `az monitor account prometheus-rule-group` command. See
 > [Azure Prometheus rule groups](https://learn.microsoft.com/azure/azure-monitor/essentials/prometheus-rule-groups).
 
 ## 4. Import Grafana dashboard
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
@@ -135,6 +162,27 @@ curl -sS "https://grafana.com/api/dashboards/14348/revisions/latest/download" \
     --data-binary @-
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+
+$dash = Invoke-RestMethod -Uri "https://grafana.com/api/dashboards/14348/revisions/latest/download"
+$dash.id = $null
+$body = @{ dashboard=$dash; overwrite=$true; folderId=0 } | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+  -Headers @{ Authorization="Bearer $token"; "Content-Type"="application/json" } `
+  -Body $body
+```
+
+</details>
+
 The dashboard shows:
 - **Error budget remaining** per SLO (e.g., "72% of monthly budget left")
 - **Burn rate** over time (current vs sustainable)
@@ -142,6 +190,9 @@ The dashboard shows:
 - **Time until budget exhaustion** at current burn rate
 
 ## 5. Verify
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 # Generate some traffic
@@ -156,6 +207,27 @@ for i in $(seq 1 50); do curl -s "http://${AGFC}/api/items" > /dev/null; done
 #   slo:error_budget:ratio{sloth_service="azure-otel-apps"}
 #   slo:current_burn_rate:ratio{sloth_service="azure-otel-apps"}
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+# Generate some traffic
+$AGFC = kubectl get gateway azure-otel-gw -n azure-otel `
+  -o jsonpath='{.status.addresses[0].value}'
+
+1..50 | ForEach-Object { Invoke-WebRequest -Uri "http://$AGFC/api/items" -UseBasicParsing | Out-Null }
+
+# Check recording rules are producing data (wait 2-3 minutes)
+# In Grafana, query:
+#   slo:sli_error:ratio_rate5m{sloth_service="azure-otel-apps"}
+#   slo:error_budget:ratio{sloth_service="azure-otel-apps"}
+#   slo:current_burn_rate:ratio{sloth_service="azure-otel-apps"}
+```
+
+</details>
 
 <!-- DEBUG: If all SLIs return NaN:
      1. Check that step 02 Instrumentation CR is applied and pods restarted.

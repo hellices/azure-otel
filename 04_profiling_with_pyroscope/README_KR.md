@@ -92,10 +92,25 @@ OTel Operator 의 mutating webhook 은 기존 `JAVA_TOOL_OPTIONS` 를 **보존�
 
 CPU 부하 만들기:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 for i in $(seq 1 200); do curl -s "http://$alb/api/items" > /dev/null; done
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+1..200 | ForEach-Object { Invoke-WebRequest -Uri "http://$alb/api/items" -UseBasicParsing | Out-Null }
+```
+
+</details>
 
 Pyroscope UI port-forward:
 
@@ -119,11 +134,27 @@ UI 확인 포인트:
 
 ### 4a. Gateway 라우팅
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 kubectl apply -f manifests/httproute.yaml
 alb=$(kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}')
 echo "Pyroscope URL: http://$alb/pyroscope"
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+kubectl apply -f manifests/httproute.yaml
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+Write-Host "Pyroscope URL: http://$alb/pyroscope"
+```
+
+</details>
 
 ### 4b. AMG 데이터소스 등록
 
@@ -131,6 +162,9 @@ echo "Pyroscope URL: http://$alb/pyroscope"
 플러그인** 으로 이미 포함되어 있습니다. 별도 플러그인 설치 나
 ARM `grafanaPlugins` 속성 설정 불필요 — Grafana HTTP API 로
 데이터소스만 만들면 끝:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
@@ -153,6 +187,32 @@ dsUid=$(curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/na
 curl -sS -H "Authorization: Bearer $tok" "$gfEndpoint/api/datasources/uid/$dsUid/health"
 # 예상: status = OK, message = "Data source is working"
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$rg = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+$gfn = az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv
+$gfEndpoint = az grafana show -n $gfn -g $rg --query properties.endpoint -o tsv
+$alb = kubectl -n azure-otel get gateway azure-otel-gw -o 'jsonpath={.status.addresses[0].value}'
+$tok = az account get-access-token --resource "https://grafana.azure.com" --query accessToken -o tsv
+
+$body = @{ name="Pyroscope"; type="grafana-pyroscope-datasource"; access="proxy"; url="http://$alb/pyroscope" } | ConvertTo-Json
+Invoke-RestMethod -Uri "$gfEndpoint/api/datasources" -Method Post `
+  -Headers @{ Authorization="Bearer $tok"; "Content-Type"="application/json" } `
+  -Body $body
+
+# Health check
+$ds = Invoke-RestMethod -Uri "$gfEndpoint/api/datasources/name/Pyroscope" `
+  -Headers @{ Authorization="Bearer $tok" }
+Invoke-RestMethod -Uri "$gfEndpoint/api/datasources/uid/$($ds.uid)/health" `
+  -Headers @{ Authorization="Bearer $tok" }
+```
+
+</details>
 
 UI 로 하려면: Grafana → **Connections → Add new data source → Pyroscope**
 → URL `http://<ALB>/pyroscope`.

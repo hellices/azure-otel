@@ -4,6 +4,9 @@ param tags object
 param resourceToken string
 param principalId string
 param enablePrivateCluster bool
+param enableAgfc bool
+param enableAppGw bool
+param enableAmpls bool
 param nodeCount int
 param nodeVmSize string
 
@@ -39,6 +42,13 @@ var aksName          = 'aks-${workload}-${envShort}-${locationShort}'
 var aksDnsPrefix     = 'aks-${workload}-${envShort}-${locationShort}'
 var aksSubnetNsgName  = 'nsg-${workload}-${envShort}-${locationShort}-aks'
 var agfcSubnetNsgName = 'nsg-${workload}-${envShort}-${locationShort}-agfc'
+var appGwSubnetNsgName = 'nsg-${workload}-${envShort}-${locationShort}-appgw'
+var appGwName         = 'appgw-${workload}-${envShort}-${locationShort}'
+var appGwPipName      = 'pip-appgw-${workload}-${envShort}-${locationShort}'
+
+// Static internal LB IPs for AKS services (within aks-subnet 10.240.0.0/22)
+var nodejsInternalIp = '10.240.1.100'
+var pythonInternalIp = '10.240.1.101'
 
 resource aksSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   name: aksSubnetNsgName
@@ -60,12 +70,40 @@ resource aksSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
           destinationAddressPrefix: '*'
         }
       }
+      {
+        name: 'allow-internet-nodejs-3000'
+        properties: {
+          description: 'Allow inbound traffic to nodejs LoadBalancer service.'
+          priority: 210
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '3000'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+        }
+      }
+      {
+        name: 'allow-internet-python-8000'
+        properties: {
+          description: 'Allow inbound traffic to python LoadBalancer service.'
+          priority: 220
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '8000'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+        }
+      }
     ]
   }
 }
 
 // NSG for the AGFC delegated subnet — allows public HTTP/HTTPS ingress.
-resource agfcSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
+resource agfcSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (enableAgfc) {
   name: agfcSubnetNsgName
   location: location
   tags: tags
@@ -103,6 +141,45 @@ resource agfcSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   }
 }
 
+// NSG for Application Gateway v2 subnet — requires GatewayManager + Internet inbound.
+resource appGwSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (enableAppGw) {
+  name: appGwSubnetNsgName
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'allow-gateway-manager'
+        properties: {
+          description: 'Required for AppGW v2 health probes from Azure infra.'
+          priority: 100
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '65200-65535'
+          sourceAddressPrefix: 'GatewayManager'
+          destinationAddressPrefix: '*'
+        }
+      }
+      {
+        name: 'allow-internet-http-80'
+        properties: {
+          description: 'Allow inbound HTTP from Internet.'
+          priority: 200
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '80'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+        }
+      }
+    ]
+  }
+}
+
 // ---------- Networking (private VNet for AKS) ----------
 resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   name: vnetName
@@ -110,7 +187,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   tags: tags
   properties: {
     addressSpace: { addressPrefixes: [ '10.240.0.0/16' ] }
-    subnets: [
+    subnets: concat([
       {
         name: 'aks-subnet'
         properties: {
@@ -118,14 +195,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           networkSecurityGroup: {
             id: aksSubnetNsg.id
           }
-          // Private endpoint policies allow PE for downstream PaaS later.
           privateLinkServiceNetworkPolicies: 'Enabled'
         }
       }
+    ], enableAgfc ? [
       {
-        // Dedicated subnet for Application Gateway for Containers (AGFC).
-        // Must be delegated to Microsoft.ServiceNetworking/trafficControllers
-        // and sized >= /24 per AGFC requirements.
         name: 'aks-appgateway'
         properties: {
           addressPrefix: '10.240.8.0/24'
@@ -142,13 +216,200 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           ]
         }
       }
-    ]
+    ] : [], enableAppGw ? [
+      {
+        // AppGW v2 requires a dedicated subnet (no delegation needed).
+        name: 'appgw-subnet'
+        properties: {
+          addressPrefix: '10.240.4.0/24'
+          networkSecurityGroup: {
+            id: appGwSubnetNsg.id
+          }
+        }
+      }
+    ] : [])
   }
 }
 
 resource aksSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
   parent: vnet
   name: 'aks-subnet'
+}
+
+resource appGwSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = if (enableAppGw) {
+  parent: vnet
+  name: 'appgw-subnet'
+}
+
+// ---------- Application Gateway v2 (fast L7 ingress, parallel with AKS) ----------
+resource appGwPip 'Microsoft.Network/publicIPAddresses@2024-05-01' = if (enableAppGw) {
+  name: appGwPipName
+  location: location
+  tags: tags
+  sku: { name: 'Standard' }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+resource appGw 'Microsoft.Network/applicationGateways@2024-05-01' = if (enableAppGw) {
+  name: appGwName
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      name: 'Standard_v2'
+      tier: 'Standard_v2'
+      capacity: 1
+    }
+    gatewayIPConfigurations: [
+      {
+        name: 'gateway-ip'
+        properties: {
+          subnet: { id: appGwSubnet.id }
+        }
+      }
+    ]
+    frontendIPConfigurations: [
+      {
+        name: 'frontend-public'
+        properties: {
+          publicIPAddress: { id: appGwPip.id }
+        }
+      }
+    ]
+    frontendPorts: [
+      {
+        name: 'port-80'
+        properties: { port: 80 }
+      }
+    ]
+    backendAddressPools: [
+      {
+        name: 'nodejs-backend'
+        properties: {
+          backendAddresses: [ { ipAddress: nodejsInternalIp } ]
+        }
+      }
+      {
+        name: 'python-backend'
+        properties: {
+          backendAddresses: [ { ipAddress: pythonInternalIp } ]
+        }
+      }
+    ]
+    backendHttpSettingsCollection: [
+      {
+        name: 'nodejs-settings'
+        properties: {
+          port: 3000
+          protocol: 'Http'
+          requestTimeout: 30
+          probe: { id: resourceId('Microsoft.Network/applicationGateways/probes', appGwName, 'nodejs-probe') }
+        }
+      }
+      {
+        name: 'python-settings'
+        properties: {
+          port: 8000
+          protocol: 'Http'
+          requestTimeout: 30
+          probe: { id: resourceId('Microsoft.Network/applicationGateways/probes', appGwName, 'python-probe') }
+        }
+      }
+    ]
+    probes: [
+      {
+        name: 'nodejs-probe'
+        properties: {
+          protocol: 'Http'
+          host: nodejsInternalIp
+          path: '/healthz'
+          interval: 30
+          timeout: 10
+          unhealthyThreshold: 3
+        }
+      }
+      {
+        name: 'python-probe'
+        properties: {
+          protocol: 'Http'
+          host: pythonInternalIp
+          path: '/health'
+          interval: 30
+          timeout: 10
+          unhealthyThreshold: 3
+        }
+      }
+    ]
+    httpListeners: [
+      {
+        name: 'http-listener'
+        properties: {
+          frontendIPConfiguration: { id: resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', appGwName, 'frontend-public') }
+          frontendPort: { id: resourceId('Microsoft.Network/applicationGateways/frontendPorts', appGwName, 'port-80') }
+          protocol: 'Http'
+        }
+      }
+    ]
+    rewriteRuleSets: [
+      {
+        name: 'strip-api-prefix'
+        properties: {
+          rewriteRules: [
+            {
+              ruleSequence: 100
+              name: 'strip-api'
+              conditions: [
+                {
+                  variable: 'var_uri_path'
+                  pattern: '/api/(.*)'
+                  ignoreCase: true
+                }
+              ]
+              actionSet: {
+                urlConfiguration: {
+                  modifiedPath: '/{var_uri_path_1}'
+                  reroute: false
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+    urlPathMaps: [
+      {
+        name: 'path-map'
+        properties: {
+          defaultBackendAddressPool: { id: resourceId('Microsoft.Network/applicationGateways/backendAddressPools', appGwName, 'nodejs-backend') }
+          defaultBackendHttpSettings: { id: resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', appGwName, 'nodejs-settings') }
+          pathRules: [
+            {
+              name: 'api-rule'
+              properties: {
+                paths: [ '/api/*' ]
+                backendAddressPool: { id: resourceId('Microsoft.Network/applicationGateways/backendAddressPools', appGwName, 'python-backend') }
+                backendHttpSettings: { id: resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', appGwName, 'python-settings') }
+                rewriteRuleSet: { id: resourceId('Microsoft.Network/applicationGateways/rewriteRuleSets', appGwName, 'strip-api-prefix') }
+              }
+            }
+          ]
+        }
+      }
+    ]
+    requestRoutingRules: [
+      {
+        name: 'main-rule'
+        properties: {
+          priority: 100
+          ruleType: 'PathBasedRouting'
+          httpListener: { id: resourceId('Microsoft.Network/applicationGateways/httpListeners', appGwName, 'http-listener') }
+          urlPathMap: { id: resourceId('Microsoft.Network/applicationGateways/urlPathMaps', appGwName, 'path-map') }
+        }
+      }
+    ]
+  }
 }
 
 // ---------- Log Analytics + Application Insights (workspace-based) ----------
@@ -419,12 +680,25 @@ resource aksKubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
+// AKS managed identity needs Network Contributor on the VNet to create internal
+// load balancers (required for AppGW backend with static internal IPs).
+var networkContributorRoleId = '4d97b98b-1d4f-4787-a291-c67834d212e7' // Network Contributor
+resource aksIdentityNetworkContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAppGw) {
+  scope: vnet
+  name: guid(vnet.id, aks.id, networkContributorRoleId)
+  properties: {
+    principalId: aks.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', networkContributorRoleId)
+  }
+}
+
 // ---------- Azure Monitor Private Link Scope (AMPLS) ----------
 // Used by step 03 (OTel Collector → Application Insights) so that trace
 // ingestion stays inside the VNet. Scope is left open (Open/Open) to keep
 // cross-subscription monitoring traffic working — flip to PrivateOnly later
 // if the environment is fully locked down.
-resource ampls 'microsoft.insights/privateLinkScopes@2021-07-01-preview' = {
+resource ampls 'microsoft.insights/privateLinkScopes@2021-07-01-preview' = if (enableAmpls) {
   name: 'ampls-${workload}-${envShort}-${locationShort}-${uniqueSuffix}'
   location: 'global'
   tags: tags
@@ -436,7 +710,7 @@ resource ampls 'microsoft.insights/privateLinkScopes@2021-07-01-preview' = {
   }
 }
 
-resource amplsAppInsightsLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = {
+resource amplsAppInsightsLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (enableAmpls) {
   parent: ampls
   name: 'appi-link'
   properties: {
@@ -444,7 +718,7 @@ resource amplsAppInsightsLink 'microsoft.insights/privateLinkScopes/scopedResour
   }
 }
 
-resource amplsLawLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = {
+resource amplsLawLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (enableAmpls) {
   parent: ampls
   name: 'law-link'
   properties: {
@@ -456,7 +730,7 @@ resource amplsLawLink 'microsoft.insights/privateLinkScopes/scopedResources@2021
 // scoped into AMPLS (AMW accounts cannot be linked directly). Without this,
 // ama-metrics receives 403 InvalidAccess "Data collection endpoint must be
 // used to access configuration over private link" from AMCS.
-resource amplsDceLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = {
+resource amplsDceLink 'microsoft.insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (enableAmpls) {
   parent: ampls
   name: 'dce-link'
   properties: {
@@ -468,14 +742,14 @@ resource amplsDceLink 'microsoft.insights/privateLinkScopes/scopedResources@2021
 // required for AMW Prometheus to resolve through the private endpoint.
 // PE DNS zone groups are capped at 6 entries, so blob is dropped (AMPLS does
 // not need it for our setup).
-var amplsZones = [
+var amplsZones = enableAmpls ? [
   'privatelink.monitor.azure.com'
   'privatelink.oms.opinsights.azure.com'
   'privatelink.ods.opinsights.azure.com'
   'privatelink.agentsvc.azure-automation.net'
   'privatelink.${location}.handler.control.monitor.azure.com'
   'privatelink.${location}.ingest.monitor.azure.com'
-]
+] : []
 
 resource amplsPrivateDnsZones 'Microsoft.Network/privateDnsZones@2024-06-01' = [for z in amplsZones: {
   name: z
@@ -495,7 +769,7 @@ resource amplsPrivateDnsLinks 'Microsoft.Network/privateDnsZones/virtualNetworkL
 }]
 
 // Private Endpoint into aks-subnet, with DNS zone group binding all 5 zones.
-resource amplsPe 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+resource amplsPe 'Microsoft.Network/privateEndpoints@2024-05-01' = if (enableAmpls) {
   name: 'pe-ampls-${workload}-${envShort}-${locationShort}'
   location: location
   tags: tags
@@ -518,7 +792,7 @@ resource amplsPe 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   ]
 }
 
-resource amplsPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+resource amplsPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (enableAmpls) {
   parent: amplsPe
   name: 'default'
   properties: {
@@ -542,4 +816,7 @@ output grafanaEndpoint string = grafana.properties.endpoint
 output acrName string = acr.name
 output acrLoginServer string = acr.properties.loginServer
 output vnetName string = vnet.name
-output agfcSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'aks-appgateway')
+output agfcSubnetId string = enableAgfc ? resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'aks-appgateway') : ''
+output appGwPublicIp string = enableAppGw ? appGwPip!.properties.ipAddress : ''
+output nodejsInternalIp string = nodejsInternalIp
+output pythonInternalIp string = pythonInternalIp

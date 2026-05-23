@@ -1,8 +1,15 @@
 # 01 — Deploy to AKS (azd + Helm)
 
 Provisions AKS plus the monitoring stack (AMW, Grafana, App Insights, Log
-Analytics, **AMPLS + Private Endpoint + 5 Private DNS Zones**) and deploys the
-[`azure-otel/`](./azure-otel) Helm chart.
+Analytics) and deploys the [`azure-otel/`](./azure-otel) Helm chart.
+
+By default deploys **Application Gateway v2** for L7 path-based routing
+(/ → nodejs, /api/* → python) — provisioned in parallel with AKS for fast
+deployment (~10 min).
+
+Optionally enables **AGFC** (Application Gateway for Containers) and **AMPLS**
+(Azure Monitor Private Link Scope) — both are disabled by default (~30+ min
+when enabled).
 
 > Korean version: [README_KR.md](./README_KR.md)
 
@@ -10,9 +17,23 @@ Analytics, **AMPLS + Private Endpoint + 5 Private DNS Zones**) and deploys the
 
 ## Prerequisites
 
+<details open>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 brew install azure/azd/azd azure-cli kubectl helm
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+winget install Microsoft.Azd Microsoft.AzureCLI Kubernetes.kubectl Helm.Helm
+```
+
+</details>
 
 ## Steps
 
@@ -33,15 +54,25 @@ azd env set AZURE_LOCATION koreacentral
 
 ### 2. Provision infra
 
+**Default mode (~10 min)** — AppGW v2 + Internal LB (path-based routing):
+
 ```bash
 azd up
 ```
 
-`azd up` creates the AKS / monitoring stack via Bicep and runs the
-postprovision hook to enable Gateway API + ALB add-on and grant the AGFC subnet
-permissions. **The Helm release is not part of this hook.**
+**AGFC mode (~30 min)** — Application Gateway for Containers + AMPLS:
+
+```bash
+azd env set ENABLE_AGFC true
+azd env set ENABLE_APPGW false
+azd env set ENABLE_AMPLS true
+azd up
+```
 
 ### 3. Connect kubectl
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 rg=$(azd env get-value AZURE_RESOURCE_GROUP)
@@ -50,50 +81,139 @@ az aks get-credentials --resource-group "$rg" --name "$aks" --overwrite-existing
 kubectl get nodes
 ```
 
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$rg = azd env get-value AZURE_RESOURCE_GROUP
+$aks = azd env get-value AKS_NAME
+az aks get-credentials --resource-group $rg --name $aks --overwrite-existing
+kubectl get nodes
+```
+
+</details>
+
 ### 4. Deploy the Helm chart
+
+**Default mode (AppGW v2):**
+
+```bash
+helm upgrade --install azure-otel ./azure-otel --namespace azure-otel --create-namespace --set gateway.enabled=false --set appGw.enabled=true --wait --timeout 5m
+
+kubectl -n azure-otel get pods,svc
+```
+
+**AGFC mode:**
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 subnetId=$(azd env get-value AGFC_SUBNET_ID)
 helm upgrade --install azure-otel ./azure-otel \
   --namespace azure-otel --create-namespace \
+  --set gateway.enabled=true \
   --set "gateway.subnetId=$subnetId" \
   --wait --timeout 10m
 
 kubectl -n azure-otel get pods,svc
 ```
 
-### 4-1. Get the AGFC public address
+</details>
 
-The Gateway typically gets its public IP/FQDN within 1–3 minutes after the
-chart is deployed.
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$subnetId = azd env get-value AGFC_SUBNET_ID
+helm upgrade --install azure-otel ./azure-otel `
+  --namespace azure-otel --create-namespace `
+  --set gateway.enabled=true `
+  --set "gateway.subnetId=$subnetId" `
+  --wait --timeout 10m
+
+kubectl -n azure-otel get pods,svc
+```
+
+</details>
+
+### 4-1. Get the public address
+
+**Default mode (AppGW v2)** — single public IP with path-based routing:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
-# One-shot
-kubectl -n azure-otel get gateway azure-otel-gw \
-  -o 'jsonpath={.status.addresses[0].value}'
-
-# Wait until ready (kubectl 1.23+)
-kubectl -n azure-otel wait gateway/azure-otel-gw \
-  --for=jsonpath='{.status.addresses[0].value}' --timeout=5m
-
-# Capture and open
-addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
-  -o 'jsonpath={.status.addresses[0].value}')
+addr=$(azd env get-value APPGW_PUBLIC_IP)
 echo "http://$addr"
 open "http://$addr"    # macOS; use xdg-open on Linux
 ```
 
-The `Gateway` / `HTTPRoute` are created by the Helm chart; the AGFC controller
-then populates `.status.addresses[0].value` with the Application Gateway for
-Containers frontend.
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$addr = azd env get-value APPGW_PUBLIC_IP
+Write-Host "http://$addr"
+Start-Process "http://$addr"
+```
+
+</details>
+
+**AGFC mode** — single Gateway address for all routes:
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
+```bash
+addr=$(kubectl -n azure-otel get gateway azure-otel-gw \
+  -o 'jsonpath={.status.addresses[0].value}')
+echo "http://$addr"
+open "http://$addr"
+```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$addr = kubectl -n azure-otel get gateway azure-otel-gw `
+  -o 'jsonpath={.status.addresses[0].value}'
+Write-Host "http://$addr"
+Start-Process "http://$addr"
+```
+
+</details>
 
 ### 5. Open Grafana
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
 
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT)
 echo "$grafana"
 open "$grafana"    # macOS; use xdg-open on Linux
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT
+Write-Host $grafana
+Start-Process $grafana
+```
+
+</details>
 
 ### 6. Tear down
 
@@ -109,17 +229,21 @@ azd down --purge --force
 
 Under resource group `rg-<env>`:
 
-- **VNet** `aotel-vnet-*` (10.240.0.0/16) + private `aks-subnet` (10.240.0.0/22)
-- **AKS** `aotel-aks-*` (Standard, 3× `Standard_D4s_v5`, 3–5 autoscale, Azure
+- **VNet** `vnet-otel-*` (10.240.0.0/16) + `aks-subnet` (10.240.0.0/22)
+- **AKS** `aks-otel-*` (Standard, 2× `Standard_D4s_v5`, 2–6 autoscale, Azure
   CNI overlay, Cilium + NetworkPolicy, OIDC, Workload Identity, RBAC)
   - Container Insights (`omsagent`) → Log Analytics
   - Managed Prometheus (`azureMonitorProfile.metrics`) → AMW
 - **Log Analytics** + **Application Insights** (workspace-based)
 - **Azure Monitor Workspace** (managed Prometheus backend)
 - **Azure Managed Grafana** (Standard, AMW datasource wired up)
-- **ACR** `aotelacr*` (Standard, AKS kubelet granted `AcrPull`)
-- **AMPLS** + Private Endpoint into `aks-subnet` + 5 Private DNS Zones (linked
-  to the VNet) so step 03's collector can reach App Insights privately.
+- **ACR** `acrotel*` (Standard, AKS kubelet granted `AcrPull`)
+- _(default)_ **Application Gateway v2** `appgw-subnet` (10.240.4.0/24) with
+  path-based routing → Internal LB (nodejs 10.240.1.100, python 10.240.1.101)
+- _(ENABLE_AGFC=true)_ AGFC subnet `aks-appgateway` (10.240.8.0/24, delegated)
+  + ALB add-on enabled via postprovision hook
+- _(ENABLE_AMPLS=true)_ **AMPLS** + Private Endpoint into `aks-subnet` + 6
+  Private DNS Zones (linked to VNet)
 
 Role assignments (with `principalId` auto-injected):
 
@@ -187,11 +311,13 @@ the VNet. The diagram below shows every resource and how they connect:
 ### What `azd up` does
 
 1. Subscription-scope Bicep creates the RG
-2. The RG module creates the VNet, AKS, monitoring, Grafana, AMPLS, role assignments
-3. `preprovision` hook: installs Azure CLI extensions, registers AGFC preview
-   feature/provider
-4. `postprovision` hook: enables AKS Gateway API + AGFC, grants the ALB MSI
-   permission on the `aks-appgateway` subnet
+2. The RG module creates the VNet, AKS, monitoring, Grafana, ACR, role assignments
+3. _(ENABLE_AGFC only)_ `preprovision` hook: installs Azure CLI extensions,
+   registers AGFC preview feature/provider (~6 min)
+4. `postprovision` hook:
+   - **Fast mode**: fetches kubeconfig only
+   - **Full mode (ENABLE_AGFC)**: enables AKS Gateway API + AGFC, grants the
+     ALB MSI permission on the `aks-appgateway` subnet (~10-15 min)
 
 > Helm install is intentionally split out of the azd lifecycle (see step 4).
 

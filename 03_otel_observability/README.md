@@ -50,6 +50,9 @@ kubectl -n azure-otel delete instrumentation azure-otel --ignore-not-found
 
 ## 1. Create the connection string Secret + apply manifests
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 kubectl -n azure-otel create secret generic otel-collector-secrets \
   --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$(azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks)" \
@@ -61,6 +64,26 @@ kubectl apply -f manifests/instrumentation.yaml
 kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
 kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$connStr = azd env get-value APPLICATION_INSIGHTS_CONNECTION_STRING --cwd ../01_deploy_to_aks
+kubectl -n azure-otel create secret generic otel-collector-secrets `
+  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$connStr" `
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f manifests/collector.yaml
+kubectl apply -f manifests/instrumentation.yaml
+
+kubectl -n azure-otel rollout status deploy/otel-collector --timeout=180s
+kubectl -n azure-otel rollout restart deploy azure-otel-spring azure-otel-python azure-otel-nodejs
+```
+
+</details>
 
 If ama-metrics doesn't see the new PodMonitor, restart it once:
 
@@ -108,6 +131,10 @@ The built-in **Azure Monitor** datasource has an Application Insights
 
 1. Grant the Grafana managed identity `Monitoring Reader` on the App
    Insights resource (one-time):
+
+   <details>
+   <summary><strong>macOS / Linux</strong></summary>
+
    ```bash
    rg=$(azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks)
    ai=$(azd env get-value APPLICATION_INSIGHTS_NAME --cwd ../01_deploy_to_aks)
@@ -117,6 +144,23 @@ The built-in **Azure Monitor** datasource has an Application Insights
    az role assignment create --assignee-object-id "$gid" --assignee-principal-type ServicePrincipal \
      --role "Monitoring Reader" --scope "$aiid"
    ```
+
+   </details>
+
+   <details open>
+   <summary><strong>Windows (PowerShell)</strong></summary>
+
+   ```powershell
+   $rg = azd env get-value AZURE_RESOURCE_GROUP --cwd ../01_deploy_to_aks
+   $ai = azd env get-value APPLICATION_INSIGHTS_NAME --cwd ../01_deploy_to_aks
+   $gfn = az resource list -g $rg --resource-type Microsoft.Dashboard/grafana --query "[0].name" -o tsv
+   $gid = az grafana show -n $gfn -g $rg --query identity.principalId -o tsv
+   $aiid = az monitor app-insights component show -g $rg -a $ai --query id -o tsv
+   az role assignment create --assignee-object-id $gid --assignee-principal-type ServicePrincipal `
+     --role "Monitoring Reader" --scope $aiid
+   ```
+
+   </details>
 2. Grafana → **Explore** → datasource **Azure Monitor** → Service
    **Application Insights** → Query type **Traces** → pick the App Insights
    resource → paste a `Trace ID` (= `operation_Id`) → widen the time range

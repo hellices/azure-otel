@@ -7,6 +7,13 @@
 $ErrorActionPreference = 'Stop'
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 
+# Skip entirely if AGFC is not enabled (saves ~6 minutes).
+$enableAgfc = azd env get-value ENABLE_AGFC 2>$null
+if ($enableAgfc -ne 'true') {
+    Write-Host "==> AGFC disabled -- skipping provider/feature registration (fast mode)."
+    exit 0
+}
+
 Write-Host "==> Installing required Azure CLI extensions..."
 az extension add --name aks-preview --upgrade --allow-preview true
 az extension add --name alb --upgrade

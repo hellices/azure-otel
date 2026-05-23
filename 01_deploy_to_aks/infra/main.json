@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.42.1.51946",
-      "templateHash": "1278379769775088655"
+      "version": "0.41.2.15936",
+      "templateHash": "12521542446385245724"
     }
   },
   "parameters": {
@@ -38,9 +38,30 @@
         "description": "When true, AKS API server is exposed only inside the VNet (private cluster). Defaults to false so kubectl works from your laptop."
       }
     },
+    "enableAgfc": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true, provisions Application Gateway for Containers (AGFC) via the ALB add-on. Disable for fast hands-on sessions (~20 min faster)."
+      }
+    },
+    "enableAppGw": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "When true, deploys Application Gateway v2 as a fast L7 ingress (parallel with AKS, no addon needed). Ignored when enableAgfc=true."
+      }
+    },
+    "enableAmpls": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true, creates Azure Monitor Private Link Scope (AMPLS) with private DNS zones and PE. Disable for fast provisioning (~5 min faster)."
+      }
+    },
     "nodeCount": {
       "type": "int",
-      "defaultValue": 3,
+      "defaultValue": 2,
       "minValue": 2,
       "maxValue": 10,
       "metadata": {
@@ -113,6 +134,15 @@
           "enablePrivateCluster": {
             "value": "[parameters('enablePrivateCluster')]"
           },
+          "enableAgfc": {
+            "value": "[parameters('enableAgfc')]"
+          },
+          "enableAppGw": {
+            "value": "[and(parameters('enableAppGw'), not(parameters('enableAgfc')))]"
+          },
+          "enableAmpls": {
+            "value": "[parameters('enableAmpls')]"
+          },
           "nodeCount": {
             "value": "[parameters('nodeCount')]"
           },
@@ -126,8 +156,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.42.1.51946",
-              "templateHash": "8579604591154193575"
+              "version": "0.41.2.15936",
+              "templateHash": "5972474948756192484"
             }
           },
           "parameters": {
@@ -147,6 +177,15 @@
               "type": "string"
             },
             "enablePrivateCluster": {
+              "type": "bool"
+            },
+            "enableAgfc": {
+              "type": "bool"
+            },
+            "enableAppGw": {
+              "type": "bool"
+            },
+            "enableAmpls": {
               "type": "bool"
             },
             "nodeCount": {
@@ -185,19 +224,17 @@
             "aksDnsPrefix": "[format('aks-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
             "aksSubnetNsgName": "[format('nsg-{0}-{1}-{2}-aks', variables('workload'), variables('envShort'), variables('locationShort'))]",
             "agfcSubnetNsgName": "[format('nsg-{0}-{1}-{2}-agfc', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "appGwSubnetNsgName": "[format('nsg-{0}-{1}-{2}-appgw', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "appGwName": "[format('appgw-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "appGwPipName": "[format('pip-appgw-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
+            "nodejsInternalIp": "10.240.1.100",
+            "pythonInternalIp": "10.240.1.101",
             "monitoringDataReaderRoleId": "b0d8363b-8ddd-447d-831f-62ca05bff136",
             "grafanaAdminRoleId": "22926164-76b3-42b3-bc55-97df8dab3e41",
             "aksClusterAdminRoleId": "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8",
             "aksClusterUserRoleId": "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
             "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
-            "amplsZones": [
-              "privatelink.monitor.azure.com",
-              "privatelink.oms.opinsights.azure.com",
-              "privatelink.ods.opinsights.azure.com",
-              "privatelink.agentsvc.azure-automation.net",
-              "[format('privatelink.{0}.handler.control.monitor.azure.com', parameters('location'))]",
-              "[format('privatelink.{0}.ingest.monitor.azure.com', parameters('location'))]"
-            ]
+            "amplsZones": "[if(parameters('enableAmpls'), createArray('privatelink.monitor.azure.com', 'privatelink.oms.opinsights.azure.com', 'privatelink.ods.opinsights.azure.com', 'privatelink.agentsvc.azure-automation.net', format('privatelink.{0}.handler.control.monitor.azure.com', parameters('location')), format('privatelink.{0}.ingest.monitor.azure.com', parameters('location'))), createArray())]"
           },
           "resources": [
             {
@@ -221,11 +258,40 @@
                       "sourceAddressPrefix": "Internet",
                       "destinationAddressPrefix": "*"
                     }
+                  },
+                  {
+                    "name": "allow-internet-nodejs-3000",
+                    "properties": {
+                      "description": "Allow inbound traffic to nodejs LoadBalancer service.",
+                      "priority": 210,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "3000",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  },
+                  {
+                    "name": "allow-internet-python-8000",
+                    "properties": {
+                      "description": "Allow inbound traffic to python LoadBalancer service.",
+                      "priority": 220,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "8000",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
                   }
                 ]
               }
             },
             {
+              "condition": "[parameters('enableAgfc')]",
               "type": "Microsoft.Network/networkSecurityGroups",
               "apiVersion": "2024-05-01",
               "name": "[variables('agfcSubnetNsgName')]",
@@ -265,6 +331,46 @@
               }
             },
             {
+              "condition": "[parameters('enableAppGw')]",
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('appGwSubnetNsgName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allow-gateway-manager",
+                    "properties": {
+                      "description": "Required for AppGW v2 health probes from Azure infra.",
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "65200-65535",
+                      "sourceAddressPrefix": "GatewayManager",
+                      "destinationAddressPrefix": "*"
+                    }
+                  },
+                  {
+                    "name": "allow-internet-http-80",
+                    "properties": {
+                      "description": "Allow inbound HTTP from Internet.",
+                      "priority": 200,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "80",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
               "type": "Microsoft.Network/virtualNetworks",
               "apiVersion": "2024-05-01",
               "name": "[variables('vnetName')]",
@@ -276,39 +382,201 @@
                     "10.240.0.0/16"
                   ]
                 },
-                "subnets": [
+                "subnets": "[concat(createArray(createObject('name', 'aks-subnet', 'properties', createObject('addressPrefix', '10.240.0.0/22', 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))), 'privateLinkServiceNetworkPolicies', 'Enabled'))), if(parameters('enableAgfc'), createArray(createObject('name', 'aks-appgateway', 'properties', createObject('addressPrefix', '10.240.8.0/24', 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))), 'delegations', createArray(createObject('name', 'agfc-delegation', 'properties', createObject('serviceName', 'Microsoft.ServiceNetworking/trafficControllers')))))), createArray()), if(parameters('enableAppGw'), createArray(createObject('name', 'appgw-subnet', 'properties', createObject('addressPrefix', '10.240.4.0/24', 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', variables('appGwSubnetNsgName')))))), createArray()))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('appGwSubnetNsgName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableAppGw')]",
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('appGwPipName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static"
+              }
+            },
+            {
+              "condition": "[parameters('enableAppGw')]",
+              "type": "Microsoft.Network/applicationGateways",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('appGwName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "Standard_v2",
+                  "tier": "Standard_v2",
+                  "capacity": 1
+                },
+                "gatewayIPConfigurations": [
                   {
-                    "name": "aks-subnet",
+                    "name": "gateway-ip",
                     "properties": {
-                      "addressPrefix": "10.240.0.0/22",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))]"
-                      },
-                      "privateLinkServiceNetworkPolicies": "Enabled"
+                      "subnet": {
+                        "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'appgw-subnet')]"
+                      }
+                    }
+                  }
+                ],
+                "frontendIPConfigurations": [
+                  {
+                    "name": "frontend-public",
+                    "properties": {
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]"
+                      }
+                    }
+                  }
+                ],
+                "frontendPorts": [
+                  {
+                    "name": "port-80",
+                    "properties": {
+                      "port": 80
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "nodejs-backend",
+                    "properties": {
+                      "backendAddresses": [
+                        {
+                          "ipAddress": "[variables('nodejsInternalIp')]"
+                        }
+                      ]
                     }
                   },
                   {
-                    "name": "aks-appgateway",
+                    "name": "python-backend",
                     "properties": {
-                      "addressPrefix": "10.240.8.0/24",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))]"
-                      },
-                      "delegations": [
+                      "backendAddresses": [
                         {
-                          "name": "agfc-delegation",
+                          "ipAddress": "[variables('pythonInternalIp')]"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "backendHttpSettingsCollection": [
+                  {
+                    "name": "nodejs-settings",
+                    "properties": {
+                      "port": 3000,
+                      "protocol": "Http",
+                      "requestTimeout": 30,
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/probes', variables('appGwName'), 'nodejs-probe')]"
+                      }
+                    }
+                  },
+                  {
+                    "name": "python-settings",
+                    "properties": {
+                      "port": 8000,
+                      "protocol": "Http",
+                      "requestTimeout": 30,
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/probes', variables('appGwName'), 'python-probe')]"
+                      }
+                    }
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "nodejs-probe",
+                    "properties": {
+                      "protocol": "Http",
+                      "host": "[variables('nodejsInternalIp')]",
+                      "path": "/healthz",
+                      "interval": 30,
+                      "timeout": 10,
+                      "unhealthyThreshold": 3
+                    }
+                  },
+                  {
+                    "name": "python-probe",
+                    "properties": {
+                      "protocol": "Http",
+                      "host": "[variables('pythonInternalIp')]",
+                      "path": "/health",
+                      "interval": 30,
+                      "timeout": 10,
+                      "unhealthyThreshold": 3
+                    }
+                  }
+                ],
+                "httpListeners": [
+                  {
+                    "name": "http-listener",
+                    "properties": {
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('appGwName'), 'frontend-public')]"
+                      },
+                      "frontendPort": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('appGwName'), 'port-80')]"
+                      },
+                      "protocol": "Http"
+                    }
+                  }
+                ],
+                "urlPathMaps": [
+                  {
+                    "name": "path-map",
+                    "properties": {
+                      "defaultBackendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGwName'), 'nodejs-backend')]"
+                      },
+                      "defaultBackendHttpSettings": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGwName'), 'nodejs-settings')]"
+                      },
+                      "pathRules": [
+                        {
+                          "name": "api-rule",
                           "properties": {
-                            "serviceName": "Microsoft.ServiceNetworking/trafficControllers"
+                            "paths": [
+                              "/api/*"
+                            ],
+                            "backendAddressPool": {
+                              "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('appGwName'), 'python-backend')]"
+                            },
+                            "backendHttpSettings": {
+                              "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('appGwName'), 'python-settings')]"
+                            }
                           }
                         }
                       ]
                     }
                   }
+                ],
+                "requestRoutingRules": [
+                  {
+                    "name": "main-rule",
+                    "properties": {
+                      "priority": 100,
+                      "ruleType": "PathBasedRouting",
+                      "httpListener": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('appGwName'), 'http-listener')]"
+                      },
+                      "urlPathMap": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/urlPathMaps', variables('appGwName'), 'path-map')]"
+                      }
+                    }
+                  }
                 ]
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('agfcSubnetNsgName'))]",
-                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('aksSubnetNsgName'))]"
+                "[resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
               ]
             },
             {
@@ -545,6 +813,20 @@
               ]
             },
             {
+              "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+              "apiVersion": "2023-03-11",
+              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+              "name": "configurationAccessEndpoint",
+              "properties": {
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]",
+                "description": "DCE association for ama-metrics configuration access over private link."
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('aksName'))]",
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')))]"
+              ]
+            },
+            {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[resourceId('Microsoft.Monitor/accounts', variables('amwName'))]",
@@ -620,6 +902,7 @@
               ]
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "microsoft.insights/privateLinkScopes",
               "apiVersion": "2021-07-01-preview",
               "name": "[format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix'))]",
@@ -633,6 +916,7 @@
               }
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
               "apiVersion": "2021-07-01-preview",
               "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'appi-link')]",
@@ -645,6 +929,7 @@
               ]
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
               "apiVersion": "2021-07-01-preview",
               "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'law-link')]",
@@ -657,6 +942,7 @@
               ]
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
               "apiVersion": "2021-07-01-preview",
               "name": "[format('{0}/{1}', format('ampls-{0}-{1}-{2}-{3}', variables('workload'), variables('envShort'), variables('locationShort'), variables('uniqueSuffix')), 'dce-link')]",
@@ -701,6 +987,7 @@
               ]
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "Microsoft.Network/privateEndpoints",
               "apiVersion": "2024-05-01",
               "name": "[format('pe-ampls-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort'))]",
@@ -731,6 +1018,7 @@
               ]
             },
             {
+              "condition": "[parameters('enableAmpls')]",
               "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
               "apiVersion": "2024-05-01",
               "name": "[format('{0}/{1}', format('pe-ampls-{0}-{1}-{2}', variables('workload'), variables('envShort'), variables('locationShort')), 'default')]",
@@ -797,7 +1085,19 @@
             },
             "agfcSubnetId": {
               "type": "string",
-              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aks-appgateway')]"
+              "value": "[if(parameters('enableAgfc'), resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aks-appgateway'), '')]"
+            },
+            "appGwPublicIp": {
+              "type": "string",
+              "value": "[if(parameters('enableAppGw'), reference(resourceId('Microsoft.Network/publicIPAddresses', variables('appGwPipName')), '2024-05-01').ipAddress, '')]"
+            },
+            "nodejsInternalIp": {
+              "type": "string",
+              "value": "[variables('nodejsInternalIp')]"
+            },
+            "pythonInternalIp": {
+              "type": "string",
+              "value": "[variables('pythonInternalIp')]"
             }
           }
         }
@@ -860,9 +1160,29 @@
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.acrLoginServer.value]"
     },
+    "ENABLE_AGFC": {
+      "type": "string",
+      "value": "[string(parameters('enableAgfc'))]"
+    },
+    "ENABLE_APPGW": {
+      "type": "string",
+      "value": "[string(and(parameters('enableAppGw'), not(parameters('enableAgfc'))))]"
+    },
     "AGFC_SUBNET_ID": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.agfcSubnetId.value]"
+    },
+    "APPGW_PUBLIC_IP": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.appGwPublicIp.value]"
+    },
+    "NODEJS_INTERNAL_IP": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.nodejsInternalIp.value]"
+    },
+    "PYTHON_INTERNAL_IP": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-otel-{0}-{1}', variables('envShort'), variables('locationShort'))), 'Microsoft.Resources/deployments', 'resources'), '2025-04-01').outputs.pythonInternalIp.value]"
     },
     "VNET_NAME": {
       "type": "string",

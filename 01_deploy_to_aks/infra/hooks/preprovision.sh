@@ -6,6 +6,13 @@ if [ -z "$BASH_VERSION" ]; then exec bash "$0" "$@"; fi
 # the infrastructure.
 set -euo pipefail
 
+# Skip entirely if AGFC is not enabled (saves ~6 minutes).
+enableAgfc=$(azd env get-value ENABLE_AGFC 2>/dev/null || echo "false")
+if [[ "$enableAgfc" != "true" ]]; then
+    echo "==> AGFC disabled — skipping provider/feature registration (fast mode)."
+    exit 0
+fi
+
 echo "==> Installing required Azure CLI extensions..."
 az extension add --name aks-preview --upgrade --allow-preview true
 az extension add --name alb --upgrade

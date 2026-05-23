@@ -46,6 +46,9 @@ kubectl apply -f manifests/generated-rules.yaml
 
 ## 3. Grafana 대시보드 임포트
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
 grafana=$(azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks)
 token=$(az account get-access-token \
@@ -59,6 +62,27 @@ curl -sS "https://grafana.com/api/dashboards/14348/revisions/latest/download" \
     -H 'Content-Type: application/json' \
     --data-binary @-
 ```
+
+</details>
+
+<details open>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+$grafana = azd env get-value GRAFANA_ENDPOINT --cwd ../01_deploy_to_aks
+$token = az account get-access-token `
+  --resource ce34e7e5-485f-4d76-964f-b3d2b16d1e4f `
+  --query accessToken -o tsv
+
+$dash = Invoke-RestMethod -Uri "https://grafana.com/api/dashboards/14348/revisions/latest/download"
+$dash.id = $null
+$body = @{ dashboard=$dash; overwrite=$true; folderId=0 } | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri "$grafana/api/dashboards/db" -Method Post `
+  -Headers @{ Authorization="Bearer $token"; "Content-Type"="application/json" } `
+  -Body $body
+```
+
+</details>
 
 ## 알림 이해
 
