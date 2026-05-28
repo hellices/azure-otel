@@ -38,7 +38,7 @@ spring pod (OTel javaagent + Pyroscope javaagent)
 |---|---|
 | `pyroscope` (Helm, single binary) | 프로파일 저장소 + UI `:4040` |
 | `spring-pyroscope-patch.yaml` | `pyroscope.jar` 다운로드 initContainer + JVM/서버 환경변수 |
-| (선택) `HTTPRoute` (AGFC) | AMG 가 접근할 수 있게 게이트웨이 노출 |
+| (선택) `HTTPRoute` (AGFC 전용) | AGFC 사용 시에만 AMG 접근용 게이트웨이 노출 |
 
 `PYROSCOPE_APPLICATION_NAME=spring` 으로 두면 Pyroscope `service_name`
 라벨이 02·03 단계 대시보드 `service=spring` 라벨과 같아져 메트릭 ↔
@@ -50,6 +50,28 @@ flame graph 점프가 자연스럽습니다.
 - AKS pod 가 `github.com` 에 접근 가능해야 함 (기본 egress 열림). egress
   통제 환경이면 `pyroscope.jar` 를 ACR 에 미러하고 initContainer 이미지/URL
   수정.
+
+## 권장 진행 방식 (변경)
+
+아래 순서로 진행하는 것을 기본으로 합니다.
+
+1. 01~03 단계 완료 후 정상 동작 확인
+2. 04 단계 점검용 리소스 그룹 생성
+3. 04 단계 적용과 동시에 수집/접속 상태 확인
+
+점검용 리소스 그룹 예시:
+
+```bash
+az group create -n rg-otel-04-check -l koreacentral
+```
+
+01~03 정상 여부 빠른 확인 예시:
+
+```bash
+kubectl -n azure-otel get deploy,pod,svc
+kubectl -n azure-otel get instrumentation
+kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
+```
 
 ## 1. Pyroscope 설치
 
@@ -67,6 +89,10 @@ helm upgrade --install pyroscope grafana/pyroscope \
 
 kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 ```
+
+`manifests/pyroscope-values.yaml`의 `api.base-url: /pyroscope`는 기본적으로 **주석 처리**되어 있습니다.
+AGFC HTTPRoute 등 리버스 프록시를 통해 `/pyroscope` 경로로 노출할 때만 주석을 해제하세요.
+port-forward로 직접 접근할 때 이 옵션이 켜져 있으면 UI asset 경로가 깨져 빈 화면이 됩니다.
 
 ## 2. Spring deployment 에 Pyroscope Java agent 주입
 
@@ -132,7 +158,12 @@ UI 확인 포인트:
 
 ## 4. (선택) AMG 에 Pyroscope 노출
 
-### 4a. Gateway 라우팅
+기본 배포 모드가 **AppGW** 인 경우, 이 문서의 `HTTPRoute` 방법은 적용되지 않습니다.
+현재 레포의 `manifests/httproute.yaml`은 **AGFC 사용 시 전용**입니다.
+AppGW 모드에서는 우선 `kubectl port-forward svc/pyroscope 4040:4040`로 검증하고,
+외부 노출이 필요하면 AppGW 백엔드 풀/경로 규칙을 별도로 추가하세요.
+
+### 4a. Gateway 라우팅 (AGFC 전용)
 
 <details>
 <summary><strong>macOS / Linux</strong></summary>

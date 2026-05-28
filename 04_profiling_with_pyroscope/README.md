@@ -40,7 +40,7 @@ spring pod (OTel javaagent + Pyroscope javaagent)
 |---|---|
 | `pyroscope` (Helm, single binary) | Profiles store + UI on `:4040` |
 | `spring-pyroscope-patch.yaml` | initContainer downloads `pyroscope.jar`; env vars wire it to the JVM and Pyroscope server |
-| (optional) `HTTPRoute` on AGFC | Exposes Pyroscope behind the existing gateway for AMG |
+| (optional) `HTTPRoute` (AGFC-only) | Exposes Pyroscope behind the gateway when AGFC is enabled |
 
 The patch sets `PYROSCOPE_APPLICATION_NAME=spring` so the Pyroscope label
 `service_name` matches the `service=spring` label used by the step-02/03
@@ -53,6 +53,28 @@ dashboards — metrics ↔ flame graph correlation comes for free.
 - AKS pods can reach `github.com` for the agent download (default egress
   is open). If outbound is locked down, mirror `pyroscope.jar` to ACR and
   edit the initContainer image / URL.
+
+## Recommended Execution Flow (Updated)
+
+Use this sequence as the default workflow.
+
+1. Complete stages 01–03 and verify health first.
+2. Create a dedicated resource group for stage-04 validation.
+3. Apply stage 04 while checking ingestion and access continuously.
+
+Example validation resource group:
+
+```bash
+az group create -n rg-otel-04-check -l koreacentral
+```
+
+Quick sanity checks for stages 01–03:
+
+```bash
+kubectl -n azure-otel get deploy,pod,svc
+kubectl -n azure-otel get instrumentation
+kubectl -n azure-otel get podmonitor.azmonitoring.coreos.com
+```
 
 ## 1. Install Pyroscope
 
@@ -70,6 +92,11 @@ helm upgrade --install pyroscope grafana/pyroscope \
 
 kubectl -n azure-otel rollout status statefulset/pyroscope --timeout=180s
 ```
+
+`manifests/pyroscope-values.yaml` has `api.base-url: /pyroscope` **commented out** by
+default. Uncomment it only when exposing Pyroscope behind a reverse proxy at
+the `/pyroscope` path (e.g. AGFC HTTPRoute). When using `port-forward` directly,
+leaving it enabled causes blank UI (asset paths mismatch).
 
 ## 2. Inject the Pyroscope Java agent into the Spring deployment
 
@@ -136,7 +163,13 @@ In the UI:
 
 ## 4. (Optional) Expose Pyroscope to Azure Managed Grafana
 
-### 4a. Route the gateway
+If your current deployment mode is **AppGW** (the repo default), the
+`HTTPRoute` method below does not apply.
+`manifests/httproute.yaml` is **AGFC-only**. In AppGW mode, validate first via
+`kubectl port-forward svc/pyroscope 4040:4040`, then add a dedicated AppGW
+backend pool/path rule if you need external access.
+
+### 4a. Route the gateway (AGFC-only)
 
 <details>
 <summary><strong>macOS / Linux</strong></summary>

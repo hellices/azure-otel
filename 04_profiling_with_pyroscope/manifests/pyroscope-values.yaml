@@ -8,6 +8,10 @@
 # multi-tenant setups, switch to `pyroscope.deploymentMode: microservices`.
 pyroscope:
   replicaCount: 1
+  # extraArgs:
+  #   # Uncomment when exposing Pyroscope behind a reverse proxy at /pyroscope
+  #   # (e.g. AGFC HTTPRoute). Breaks port-forward UI if enabled.
+  #   api.base-url: /pyroscope
   persistence:
     enabled: true
     size: 10Gi
