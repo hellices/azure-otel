@@ -218,13 +218,23 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
       }
     ] : [], enableAppGw ? [
       {
-        // AppGW v2 requires a dedicated subnet (no delegation needed).
+        // AppGW v2 requires a dedicated subnet. As of 2024+, AppGW v2 has
+        // Network Isolation enabled by default, which mandates delegation to
+        // Microsoft.Network/applicationGateways on the subnet.
         name: 'appgw-subnet'
         properties: {
           addressPrefix: '10.240.4.0/24'
           networkSecurityGroup: {
             id: appGwSubnetNsg.id
           }
+          delegations: [
+            {
+              name: 'appgw-delegation'
+              properties: {
+                serviceName: 'Microsoft.Network/applicationGateways'
+              }
+            }
+          ]
         }
       }
     ] : [])
