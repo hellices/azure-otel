@@ -69,10 +69,12 @@ dashboards will not receive data (use App Insights built-in blades instead).
 Adds the third OTel signal — **profiling** — for the Spring service only.
 A strategic-merge patch on the Spring Deployment adds an initContainer that
 downloads the official Pyroscope Java agent and an extra `-javaagent`
-entry, so the JVM loads OTel + Pyroscope side-by-side. Same `service`
-label as step-02/03 dashboards. Python and Node need a process bootstrap
-that would touch app code, so they are intentionally out of scope here.
-OTel's native profiles signal is still in Development as of 2026-05.
+entry, so the JVM loads OTel + Pyroscope side-by-side. Profile blocks are
+persisted to **Azure Blob Storage** via Workload Identity (keyless, no
+PVC). Same `service` label as step-02/03 dashboards. Python and Node need
+a process bootstrap that would touch app code, so they are intentionally
+out of scope here. OTel's native profiles signal is still in Development
+as of 2026-05.
 
 > **(Optional) Browser RUM** — OTel auto-instrumentation only covers the server
 > side. To capture page loads / Web Vitals / client-side fetch / JS errors as

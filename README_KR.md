@@ -67,9 +67,11 @@ Insights 로 바로 전송됩니다. App Insights 가 유일한 백엔드일 때
 세 번째 OTel 시그널 **profiling** 을 **Spring 서비스 한정** 으로
 추가. Spring Deployment 에 strategic-merge patch 로 initContainer 가
 공식 Pyroscope Java agent 를 다운로드하고 `-javaagent` 를 한 줄 추가 →
-JVM 이 OTel + Pyroscope 둘 다 로드. 02·03 단계 `service` 라벨과 동일.
-Python·Node 는 프로세스 부팅 코드 가 필요해 본 단계 범위 밖. OTel 네이티브
-profiles 시그널은 2026-05 기준 Development 단계.
+JVM 이 OTel + Pyroscope 둘 다 로드. 프로파일 블록은 Workload Identity
+기반 **Azure Blob Storage** 에 영속화 (키 없는 인증, PVC 불필요).
+02·03 단계 `service` 라벨과 동일. Python·Node 는 프로세스 부팅 코드 가
+필요해 본 단계 범위 밖. OTel 네이티브 profiles 시그널은 2026-05 기준
+Development 단계.
 
 > **(선택) 브라우저 RUM** — OTel auto-instrumentation 은 서버 사이드만 잡습니다.
 > 페이지 로드 / Web Vitals / 클라이언트 fetch / JS 에러까지 보고 싶다면

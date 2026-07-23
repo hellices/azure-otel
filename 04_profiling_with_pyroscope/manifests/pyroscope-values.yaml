@@ -1,22 +1,49 @@
-# Helm values for grafana/pyroscope (single-binary mode).
-# Install:
+# Helm values for grafana/pyroscope (single-binary mode, Azure Blob storage).
+# Install (see README for the full workload-identity setup):
 #   helm repo add grafana https://grafana.github.io/helm-charts
 #   helm upgrade --install pyroscope grafana/pyroscope \
-#     -n azure-otel -f 04_profiling_with_pyroscope/manifests/pyroscope-values.yaml
+#     -n azure-otel -f 04_profiling_with_pyroscope/manifests/pyroscope-values.yaml \
+#     --version 2.2.0 \
+#     --set pyroscope.structuredConfig.storage.azure.account_name=$STORAGE_ACCOUNT \
+#     --set-string "pyroscope.serviceAccount.annotations.azure\.workload\.identity/client-id=$IDENTITY_CLIENT_ID"
+#
+# Pin --version: chart 2.x renders CLI flags the 1.x image doesn't know
+# (`flag provided but not defined`), and never hardcode pyroscope.image.tag —
+# let the chart pick its own appVersion image.
 #
 # Single binary is enough for a 3-service demo. For >100 series/host or
-# multi-tenant setups, switch to `pyroscope.deploymentMode: microservices`.
+# multi-tenant setups, switch to `architecture.microservices.enabled: true`.
 pyroscope:
   replicaCount: 1
   # extraArgs:
   #   # Uncomment when exposing Pyroscope behind a reverse proxy at /pyroscope
   #   # (e.g. AGFC HTTPRoute). Breaks port-forward UI if enabled.
   #   api.base-url: /pyroscope
-  persistence:
-    enabled: true
-    size: 10Gi
-    # "" -> default StorageClass (managed-csi on AKS), same as the SQLite PVC.
-    storageClassName: ""
+
+  # Azure Workload Identity: the webhook only injects AZURE_CLIENT_ID /
+  # AZURE_FEDERATED_TOKEN_FILE when the POD carries this label — annotating
+  # the ServiceAccount alone is not enough. The chart propagates extraLabels
+  # to every pod template (there is no podLabels value).
+  extraLabels:
+    azure.workload.identity/use: "true"
+
+  serviceAccount:
+    create: true
+    # azure.workload.identity/client-id is injected at install time via
+    # --set-string (see header) so the values file stays env-agnostic.
+    annotations: {}
+
+  # Profiles are persisted as blocks in Azure Blob Storage (durable, cheap)
+  # instead of a PVC — pod restarts / node loss no longer lose history.
+  # Auth is federated (workload identity): no account keys anywhere.
+  structuredConfig:
+    storage:
+      backend: azure
+      azure:
+        container_name: pyroscope
+        account_name: ""   # REQUIRED — set via --set at install time
+        endpoint_suffix: blob.core.windows.net
+
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits:   { cpu: "2",  memory: 2Gi }
@@ -24,7 +51,7 @@ pyroscope:
     port: 4040
   # Default retention is 31d; demo workload is tiny so keep the default.
 
-# Disable the bundled Alloy — installed separately as a DaemonSet below so
-# its lifecycle and config are easier to reason about.
+# Disable the bundled Alloy collector — this demo pushes profiles directly
+# from the Pyroscope Java agent, no scrape/collector layer needed.
 alloy:
   enabled: false
